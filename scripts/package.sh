@@ -19,6 +19,7 @@ for path in README.md LICENSE NOTICE install.sh uninstall.sh src packaging integ
 done
 
 find "$PKG_DIR" -type f -name '.DS_Store' -delete
-tar -C "$OUT_DIR" -czf "$TARBALL" "help4-disk-usage-${VERSION}"
+find "$PKG_DIR" -type f -name '._*' -delete
+COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$TARBALL" "help4-disk-usage-${VERSION}"
 
 echo "$TARBALL"
