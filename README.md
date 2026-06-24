@@ -359,3 +359,4 @@ php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
 ## License
 
 MIT License. Use it, modify it, ship it, include it in hosting stacks, and package it with commercial products. Keep the Help4 credit visible.
+By default, the WHMCS module uses the public GitHub `main.tar.gz` archive. For production release management, publish a GitHub Release tarball and set **Release Tarball URL** to that immutable asset.
