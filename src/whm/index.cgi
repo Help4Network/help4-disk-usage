@@ -98,6 +98,7 @@ sub page {
         <tbody>$rows</tbody>
       </table>
     </section>
+    <footer class="credit">Help4 Disk Usage by Help4 Network</footer>
   </main>
 </body>
 </html>

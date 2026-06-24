@@ -1,44 +1,120 @@
 # Help4 Disk Usage
 
-Help4 Disk Usage is a cPanel & WHM plugin for fast, actionable disk and inode audits on shared hosting servers.
+Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-support reporting.
 
-It is based on the Help4 Network script [`find_large_files_and_inodes`](https://github.com/Help4Network/find_large_files_and_inodes), but reshaped into an installable WHM/cPanel plugin with cached background scans, role-scoped views, and cleanup hints for real hosting operations.
+Help4 Disk Usage turns the original Help4 Network [`find_large_files_and_inodes`](https://github.com/Help4Network/find_large_files_and_inodes) scanner into a public, installable product for hosting providers:
 
-## What It Does
+- A WHM plugin for root and reseller disk/inode audits.
+- A cPanel account plugin for customer self-service visibility.
+- A WHMCS addon module for deployment, server sync, admin support reports, and customer-facing summaries.
 
-- WHM dashboard for root and resellers.
-- cPanel account view for the authenticated account only.
-- Per-account disk and inode scan cache with visible last-scanned timestamps.
-- Background scan cron so the UI does not depend on a slow foreground walk.
-- Manual refresh for all accounts, reseller-owned accounts, or one account.
-- Action-first offenders:
+The project is intentionally permissive. Hosts, agencies, cPanel, WHMCS operators, and other vendors can use it, modify it, and ship it. Keep the Help4 credit visible at the bottom.
+
+## Why This Exists
+
+Default WHM/cPanel disk usage tools are often slow, stale, cache-heavy, and hard to turn into a customer conversation. Hosts need to know:
+
+- Which account is the real offender?
+- Is it disk, inodes, logs, backups, cache, mail, uploads, or temp files?
+- Is the data fresh?
+- Can support explain the issue without asking root admins to manually dig?
+- Can customers see a useful, scoped summary without seeing other account paths?
+
+Help4 Disk Usage is designed around background scans, bounded runtime, visible timestamps, role scoping, and support-ready remediation hints.
+
+## Repository Layout
+
+```text
+src/bin/help4-disk-usage-scan                         Scanner and JSON cache writer
+src/whm/index.cgi                                     WHM root/reseller dashboard
+src/cpanel/index.live.pl                              cPanel account page
+src/static/                                           Shared UI assets
+packaging/                                            cPanel/WHM plugin metadata
+integrations/whmcs/modules/addons/help4_disk_usage/   WHMCS addon module
+docs/                                                 Security, validation, and marketing notes
+tests/                                                Local scanner smoke tests
+scripts/package.sh                                    Release tarball builder
+install.sh                                            cPanel/WHM installer
+uninstall.sh                                          cPanel/WHM uninstaller
+```
+
+## Main Features
+
+### WHM
+
+- Root dashboard for all cPanel accounts.
+- Reseller dashboard filtered to owned accounts.
+- Manual refresh for all, reseller-owned, or one account.
+- Actionable offender summaries:
   - largest files
   - stale large files
   - inode-heavy directories
-  - byte-heavy directories
-  - cache, log, temp, backup, mail, dependency, and uploads hotspots
-  - growth since the previous scan where cache history exists
-- Remediation hints that point hosts toward safe next steps instead of a static file dump.
+  - size-heavy directories
+  - cache, log, temp, backup, mail, dependency, and upload hotspots
+  - growth deltas when previous cache exists
+- Visible `scanned_at` timestamps and scan completeness.
 
-## Current Status
+### cPanel
 
-This is an initial public-review build. It is ready for local review, packaging, and first live validation on Genie only.
+- Account-scoped page in Jupiter.
+- Scans only the authenticated account home directory.
+- Renders relative paths only.
+- Shows cleanup categories and plain remediation hints.
+- Does not expose other accounts or server-wide paths.
 
-Do not roll this to gohoster or dolce01 yet. Those are future rollout targets after Genie validation and cPanel review feedback.
+### WHMCS
+
+- Addon module under `modules/addons/help4_disk_usage`.
+- Admin dashboard for synced servers and offender accounts.
+- cPanel server list from WHMCS `tblservers`.
+- Deployment/check/sync actions for cPanel servers.
+- Manual deployment command when one-click SSH deploy is unavailable.
+- Per-account scan data mapped to `tblhosting` by server ID and cPanel username.
+- Customer-area report at `index.php?m=help4_disk_usage`.
+- Client navbar link when enabled.
+- Event log for deploy/check/sync results.
 
 ## Requirements
 
+### cPanel & WHM Plugin
+
 - cPanel & WHM with the Jupiter theme.
-- Root shell access for install, WHM AppConfig registration, cPanel plugin registration, and background scanning.
-- Perl with core modules used by cPanel-era systems: `File::Find`, `File::Path`, `File::Spec`, `Fcntl`, `JSON::PP`, and `POSIX`.
+- Root shell access for install.
+- Perl with common core modules: `File::Find`, `File::Path`, `File::Spec`, `Fcntl`, `JSON::PP`, `POSIX`.
 - `/usr/local/cpanel/bin/register_appconfig`
 - `/usr/local/cpanel/scripts/install_plugin`
+- `/usr/local/cpanel/scripts/uninstall_plugin`
 
-## Install
+### WHMCS Addon
 
-From an unpacked release tarball on the cPanel server:
+- WHMCS with addon module support.
+- PHP compatible with current WHMCS releases.
+- WHMCS database access through `WHMCS\Database\Capsule`.
+- Optional PHP `ssh2` extension for one-click deploy/check/sync actions.
+
+If `ssh2` is not installed, the module still provides manual deployment commands and can store/report data after scans are synced by another trusted workflow.
+
+## Build a Release
 
 ```bash
+./scripts/package.sh
+```
+
+Output:
+
+```text
+outputs/help4-disk-usage-<version>.tar.gz
+```
+
+The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packaging metadata.
+
+## Install on a cPanel Server
+
+Upload the release tarball to the cPanel server and run:
+
+```bash
+tar -xzf help4-disk-usage-0.2.0.tar.gz
+cd help4-disk-usage-0.2.0
 sudo ./install.sh
 ```
 
@@ -49,26 +125,91 @@ The installer:
 3. Installs the scanner under `/usr/local/cpanel/3rdparty/help4-disk-usage/`.
 4. Installs the WHM CGI under `/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/`.
 5. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
-6. Installs the cPanel Jupiter plugin icon using `packaging/install.json`.
+6. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
 7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
 
-## Uninstall
+## Uninstall from a cPanel Server
 
 ```bash
 sudo ./uninstall.sh
 ```
 
-The uninstaller snapshots installed files, calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. It leaves scan cache data in `/var/cpanel/help4-disk-usage` for manual retention or deletion.
+The uninstaller snapshots installed files, calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. It intentionally leaves scan cache data in `/var/cpanel/help4-disk-usage` so operators can decide whether to retain or delete history.
 
-## Packaging
+## Install the WHMCS Addon
 
-Build a release tarball:
+Copy this directory into your WHMCS install:
 
-```bash
-./scripts/package.sh
+```text
+integrations/whmcs/modules/addons/help4_disk_usage
 ```
 
-The tarball is written to `outputs/help4-disk-usage-<version>.tar.gz`.
+Target path:
+
+```text
+<whmcs-root>/modules/addons/help4_disk_usage
+```
+
+Then in WHMCS admin:
+
+1. Go to **System Settings > Addon Modules**.
+2. Activate **Help4 Disk Usage**.
+3. Configure:
+   - Release Tarball URL
+   - SSH Port
+   - Sync Account Limit
+   - Per-Account Scan Max Seconds
+   - Client Area Reports
+   - Footer Credit
+4. Set administrator role access for the addon.
+5. Open **Addons > Help4 Disk Usage**.
+
+Activation creates:
+
+```text
+mod_help4_disk_usage_servers
+mod_help4_disk_usage_accounts
+mod_help4_disk_usage_events
+```
+
+Deactivation keeps these tables intentionally so support history is not lost.
+
+## WHMCS Deployment Workflow
+
+Open **Addons > Help4 Disk Usage > Servers & Deploy**.
+
+For each cPanel server, WHMCS provides:
+
+- **Check**: verifies expected plugin files exist.
+- **Deploy**: downloads the configured release tarball on the cPanel server and runs `install.sh`.
+- **Sync**: runs a bounded scanner command and imports JSON summaries into WHMCS.
+
+One-click actions require:
+
+- PHP `ssh2` extension installed in the WHMCS PHP runtime.
+- A WHMCS server record with a decryptable root/admin SSH password.
+- SSH access from WHMCS to the cPanel server.
+
+If those are not available, use the manual command shown in the WHMCS module:
+
+```bash
+set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; cd "$tmp"; curl -fsSL -o help4-disk-usage.tar.gz '<release-url>'; tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; ./install.sh
+```
+
+## WHMCS Customer Reporting
+
+When WHMCS syncs scan JSON, it maps cPanel accounts to WHMCS services by:
+
+- `tblhosting.server` = WHMCS server ID
+- `tblhosting.username` = cPanel username
+
+Mapped rows become visible to logged-in customers at:
+
+```text
+index.php?m=help4_disk_usage
+```
+
+Customers see only their own mapped services and support-safe remediation hints.
 
 ## Scanner CLI
 
@@ -90,84 +231,131 @@ HELP4_DU_STALE_DAYS=365
 HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
 ```
 
-## Privilege Model
+## Security Model
 
-- Root WHM users can see all cached account records and trigger all-account scans.
-- Resellers can see and refresh only accounts whose `/var/cpanel/users/<account>` file has `OWNER=<reseller>`.
-- cPanel users get a separate account page that scans only the authenticated user home directory and renders relative paths.
-- The cPanel account page stores its own cache under `$HOME/.cpanel/help4-disk-usage`.
-- The scanner does not follow symlinks and prunes `virtfs`, `.cagefs`, and `.trash`.
-- The scanner does not cross filesystem device boundaries from the account home.
+- Root WHM users see all accounts.
+- WHM resellers see only owned accounts.
+- cPanel users see only their own account.
+- cPanel customer output renders relative paths only.
+- Scanner does not follow symlinks.
+- Scanner prunes `virtfs`, `.cagefs`, and `.trash`.
+- Scanner does not cross filesystem device boundaries from account home.
+- Cleanup is not automated.
+- WHMCS stores summaries and hints, not destructive cleanup commands.
+- WHMCS client reports only show accounts mapped to that logged-in client.
+- JSON cache files should not be made web-accessible.
 
 ## Performance Model
 
-The default cPanel/WHM disk usage path can feel stale because it is cache-heavy and does not highlight cleanup targets. Help4 Disk Usage is designed around:
+Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 
 - background scans via cron
-- bounded foreground scan runtime
-- per-account JSON caches
+- bounded foreground refreshes
+- per-account JSON cache
+- atomic cache writes
 - explicit scan-complete flags
-- visible `scanned_at` timestamps
-- manual refresh from WHM or cPanel
-- small top-N result sets instead of unbounded file listings
+- visible timestamps
+- top-N offender lists
+- WHMCS sync limits for staged rollout
 
-The initial collector uses a safe filesystem walk. Future versions can add incremental indexes, filesystem event hints, and cPanel quota metadata without changing the UI contract.
+## Screenshots
 
-## Security Notes
+Screenshot deliverables from Genie validation are stored in:
 
-- Install and WHM scans require root because cross-account filesystem audit requires root on typical shared hosting systems.
-- The WHM CGI runs as root through WHM AppConfig and must filter account records before rendering reseller views.
-- Do not expose the WHM CGI outside authenticated WHM.
-- Do not make `/var/cpanel/help4-disk-usage` web-accessible.
-- The cPanel user page renders only relative paths.
-- Cleanup is not automated. The plugin reports offenders and hints; a human or separate host policy performs deletions.
-- JSON cache files are data, not executable code. Keep permissions restrictive.
+```text
+outputs/screenshots/
+```
 
-## cPanel & WHM Compatibility Notes
+Expected set:
 
-This package follows current cPanel public plugin guidance:
+- WHM root dashboard.
+- cPanel account report.
+- Marketing composite or annotated screenshots.
+
+Live authenticated screenshots require a working browser/Computer Use session. The included screenshots are generated from verified Genie-rendered HTML evidence.
+
+## Genie Validation
+
+Genie was the first live target.
+
+Verified on Genie:
+
+- cPanel 136.0 build 24.
+- WHM AppConfig registration.
+- cPanel Jupiter dynamicUI registration.
+- WHM root render.
+- cPanel account render for `adpoveva`.
+- cPanel output without raw JSON or absolute `/home/` path leakage.
+- Bounded sample scans without timeout.
+- Cron installed.
+
+Do not deploy to gohoster or dolce01 until Genie review and WHMCS integration review are complete.
+
+## Marketing Notes
+
+Positioning:
+
+> Help4 Disk Usage gives hosting teams fast, support-ready disk and inode reports for WHM, cPanel, and WHMCS.
+
+Primary value:
+
+- Fewer blind quota conversations.
+- Faster support triage.
+- Clear customer-facing cleanup hints.
+- Better visibility into cache, logs, backups, mail, uploads, temp files, and inode-heavy trees.
+- Fresh timestamps instead of mystery cached data.
+
+Audience:
+
+- Shared hosting providers.
+- Managed WordPress hosts.
+- WHMCS-based hosting companies.
+- cPanel server operators.
+- Agencies managing many cPanel accounts.
+
+## Compatibility Notes
+
+This package follows public cPanel and WHMCS module conventions:
 
 - WHM registration uses AppConfig.
 - cPanel interface registration uses `install.json`.
-- cPanel Jupiter links target a `*.live.pl` file.
+- cPanel Jupiter links target a `*.live.pl` page.
 - WHM plugin files are installed below `whostmgr/docroot/cgi`.
-- Shared runtime code is stored below `/usr/local/cpanel/3rdparty/help4-disk-usage`.
+- Runtime code is stored below `/usr/local/cpanel/3rdparty/help4-disk-usage`.
+- WHMCS integration is an addon module under `modules/addons/help4_disk_usage`.
+- WHMCS admin output uses the addon module `_output` function.
+- WHMCS client output uses `_clientarea`.
+- WHMCS hooks live in `hooks.php`.
 
 References:
 
-- [Guide to WHM Plugins - AppConfig Configuration File](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-appconfig-configuration-file)
-- [Guide to WHM Plugins - Installation Scripts](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-installation-scripts)
-- [Guide to cPanel Plugins - Add Plugins](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins)
-- [Guide to cPanel Plugins - Uninstall Plugins](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-uninstall-plugins)
+- [WHMCS Addon Modules](https://developers.whmcs.com/addon-modules/)
+- [WHMCS Addon Configuration](https://developers.whmcs.com/addon-modules/configuration/)
+- [WHMCS Addon Installation & Uninstallation](https://developers.whmcs.com/addon-modules/installation-uninstallation/)
+- [WHMCS Admin Area Output](https://developers.whmcs.com/addon-modules/admin-area-output/)
+- [WHMCS Client Area Output](https://developers.whmcs.com/addon-modules/client-area-output/)
+- [WHMCS Addon Hooks](https://developers.whmcs.com/addon-modules/hooks/)
+- [cPanel WHM AppConfig Configuration](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-appconfig-configuration-file)
+- [cPanel Plugin Installation](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins)
 
 ## Tests
 
-Run the local scanner smoke test:
+Run scanner smoke tests:
 
 ```bash
 ./tests/smoke_scanner.sh
 ```
 
-Run Perl syntax checks:
+Run syntax checks:
 
 ```bash
 perl -c src/bin/help4-disk-usage-scan
 perl -c src/whm/index.cgi
 perl -c src/cpanel/index.live.pl
+php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
+php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
 ```
 
-## Screenshot Plan
+## License
 
-Capture these after the Genie install:
-
-1. WHM root dashboard after all-account refresh.
-2. WHM reseller dashboard proving only owned accounts appear.
-3. cPanel account dashboard after own-account refresh.
-4. A cache/log/temp/backup hotspot example with remediation hints visible.
-5. Evidence that `scanned_at`, scan completeness, and refresh behavior are visible.
-
-Save screenshots and command evidence under `outputs/genie-validation-<timestamp>/`.
-
-## License and Credit
-
-GPLv3. Derived from Help4 Network `find_large_files_and_inodes` and preserving Help4 / Phillip Ley credit.
+MIT License. Use it, modify it, ship it, include it in hosting stacks, and package it with commercial products. Keep the Help4 credit visible.

@@ -14,7 +14,7 @@ TARBALL="$OUT_DIR/help4-disk-usage-${VERSION}.tar.gz"
 rm -rf "$PKG_DIR" "$TARBALL"
 mkdir -p "$PKG_DIR" "$OUT_DIR"
 
-for path in README.md LICENSE install.sh uninstall.sh src packaging docs tests scripts; do
+for path in README.md LICENSE NOTICE install.sh uninstall.sh src packaging integrations docs tests scripts; do
   cp -a "$ROOT_DIR/$path" "$PKG_DIR/"
 done
 
