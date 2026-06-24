@@ -21,7 +21,8 @@ CRON_FILE="/etc/cron.d/help4-disk-usage"
 mkdir -p "$BACKUP_DIR"
 for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_STATIC_DIR" "$WHM_ICON" "$CPANEL_DIR" "$APP_CONF" "$CRON_FILE"; do
   if [ -e "$path" ]; then
-    cp -a "$path" "$BACKUP_DIR/"
+    backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
+    cp -a "$path" "$BACKUP_DIR/$backup_name"
   fi
 done
 
