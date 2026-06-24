@@ -177,10 +177,13 @@ sub read_account_caches {
     my @out;
     while (defined(my $file = readdir $dh)) {
         next unless $file =~ /\A[A-Za-z0-9_.-]+\.json\z/;
+        (my $cache_user = $file) =~ s/\.json\z//;
         my $path = File::Spec->catfile($dir, $file);
         open my $fh, '<', $path or next;
         local $/;
         my $data = eval { decode_json(<$fh>) };
+        next unless $data && ref $data eq 'HASH';
+        next unless ($data->{user} || '') eq $cache_user;
         push @out, $data if $data && ref $data eq 'HASH';
     }
     return @out;
@@ -311,7 +314,8 @@ sub owned_accounts {
 sub allowed {
     my ($acct, $is_root, $owned) = @_;
     return 1 if $is_root;
-    return $owned->{$acct->{user}} || ($acct->{owner} && $owned->{$acct->{owner}});
+    my $user = $acct->{user} || '';
+    return $user && $owned->{$user};
 }
 
 sub parse_query {

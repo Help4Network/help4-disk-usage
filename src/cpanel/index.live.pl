@@ -11,7 +11,12 @@ my $GLOBAL_CONFIG = $ENV{HELP4_DU_CONFIG} || '/var/cpanel/help4-disk-usage/confi
 my %q = parse_query($ENV{QUERY_STRING} || '');
 my $user = $ENV{REMOTE_USER} || $ENV{CPANEL_USER} || $ENV{USER} || getpwuid($<) || '';
 $user =~ s/[^A-Za-z0-9_.-]//g;
-my $home = $ENV{HOME} || (getpwnam($user))[7] || '';
+my $euid_user = getpwuid($<) || '';
+if ($euid_user && $euid_user !~ /\A(?:root|cpanel|nobody)\z/ && $euid_user =~ /\A[A-Za-z0-9_.-]+\z/) {
+    $user = $euid_user;
+}
+my $passwd_home = $user ? (getpwnam($user))[7] : '';
+my $home = $passwd_home || $ENV{HOME} || '';
 my $cache_dir = File::Spec->catdir($home || '/tmp', '.cpanel', 'help4-disk-usage');
 my $account_cache = File::Spec->catfile($cache_dir, 'accounts', "$user.json");
 my $config = load_config();
@@ -42,6 +47,7 @@ if ($q{refresh} && $user && $home && -d $home) {
 }
 
 my $data = read_json($account_cache);
+$data = undef if $data && (($data->{user} || '') ne $user);
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
 print page($data, $notice, $user);

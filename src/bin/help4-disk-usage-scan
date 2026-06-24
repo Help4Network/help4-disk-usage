@@ -4,11 +4,12 @@ use warnings;
 use File::Find qw(find);
 use File::Path qw(make_path);
 use File::Spec;
+use Cwd qw(abs_path);
 use Fcntl qw(:flock);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 
-our $VERSION = '0.2.2';
+our $VERSION = '0.2.3';
 
 my %opt = (
     scope          => 'all',
@@ -58,6 +59,7 @@ die "--owner is required for --scope owner\n" if $opt{scope} eq 'owner' && $opt{
 die "--home must be an absolute path when provided\n" if $opt{home} ne '' && $opt{home} !~ m{\A/};
 $opt{lock_dir} ||= $opt{cache_dir};
 die "--lock-dir must be an absolute path when provided\n" if $opt{lock_dir} ne '' && $opt{lock_dir} !~ m{\A/};
+enforce_unprivileged_scope();
 
 my $started = time;
 my $cache_accounts_dir = File::Spec->catdir($opt{cache_dir}, 'accounts');
@@ -167,6 +169,18 @@ sub discover_accounts {
         push @accounts, { user => $user, owner => 'root', home => $home };
     }
     return sort { $a->{user} cmp $b->{user} } @accounts;
+}
+
+sub enforce_unprivileged_scope {
+    return if $> == 0 || $opt{fixture_root};
+    my $euid_user = getpwuid($>) || '';
+    die "Unable to determine effective user for non-root scan\n" unless $euid_user =~ /\A[A-Za-z0-9_.-]+\z/;
+    die "Non-root scans must use --scope account\n" unless $opt{scope} eq 'account';
+    die "Non-root scans may only scan the effective account\n" unless $opt{account} eq $euid_user;
+    my $allowed_home = passwd_home($euid_user);
+    die "Unable to determine home directory for $euid_user\n" unless $allowed_home;
+    die "Non-root scans must provide the effective account home\n" unless $opt{home};
+    die "Non-root scans may only scan the effective account home\n" unless same_dir($opt{home}, $allowed_home);
 }
 
 sub select_accounts {
@@ -304,6 +318,13 @@ sub passwd_home {
     return '';
 }
 
+sub same_dir {
+    my ($a, $b) = @_;
+    my $aa = abs_path($a || '');
+    my $bb = abs_path($b || '');
+    return $aa && $bb && $aa eq $bb;
+}
+
 sub should_prune {
     my ($path, $home) = @_;
     my $rel = rel_path($home, $path);
@@ -341,7 +362,6 @@ sub classify_path {
 sub item {
     my ($path, $rel, $bytes, $mtime) = @_;
     return {
-        path          => $path,
         relative_path => $rel,
         bytes         => int($bytes),
         mtime_epoch   => int($mtime || 0),

@@ -7,6 +7,7 @@
 - cPanel user: authenticated account only, with relative paths rendered.
 - WHMCS admin: synced summary data across mapped servers.
 - WHMCS client: only synced rows where `client_id` matches the logged-in client.
+- WHMCS client rendering also re-checks the current `tblhosting` service ID, server ID, username, and logged-in client before displaying a row.
 
 ## Data Locations
 
@@ -25,6 +26,9 @@
 - Scanner prunes `virtfs`, `.cagefs`, and `.trash`.
 - Scanner does not follow symlinks.
 - Scanner does not cross device boundaries from the account home.
+- Scanner does not emit absolute file paths in large-file or hotspot item lists.
+- Non-root scanner runs must use `--scope account`, must match the effective OS account, and must scan that account's home directory.
+- WHM reseller authorization is based on live `/var/cpanel/users/<account>` ownership for the account username, not cached owner metadata.
 - Result sets are capped by `HELP4_DU_TOP`.
 - Runtime is capped by `HELP4_DU_MAX_SECONDS`.
 - Cache writes are atomic.
@@ -34,6 +38,7 @@
 - WHM root can edit cPanel refresh limits, cPanel scan caps, WHM scan caps, and package-specific overrides in the WHM UI.
 - UI performs output escaping for rendered values.
 - WHMCS one-click deploy/check/sync requires PHP `ssh2`; otherwise admins use the manual deployment command.
+- WHMCS sync ignores invalid account usernames, normalizes severity values, and strips unsupported fields from synced scan item arrays.
 - WHMCS does not perform file deletion or cleanup actions.
 
 ## Known Review Items

@@ -117,8 +117,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.2.tar.gz
-cd help4-disk-usage-0.2.2
+tar -xzf help4-disk-usage-0.2.3.tar.gz
+cd help4-disk-usage-0.2.3
 sudo ./install.sh
 ```
 
@@ -298,7 +298,8 @@ cPanel user throttle state is stored under the account's own `.cpanel/help4-disk
 - cPanel user refreshes are throttled by account and can be package-specific.
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
-- WHMCS client reports only show accounts mapped to that logged-in client.
+- WHMCS strips absolute scanner paths before storing support summary lists.
+- WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
 - JSON cache files should not be made web-accessible.
 
 ## Performance Model
@@ -398,10 +399,11 @@ References:
 
 ## Tests
 
-Run scanner smoke tests:
+Run scanner and security boundary smoke tests:
 
 ```bash
 ./tests/smoke_scanner.sh
+./tests/security_boundaries.sh
 ```
 
 Run syntax checks:

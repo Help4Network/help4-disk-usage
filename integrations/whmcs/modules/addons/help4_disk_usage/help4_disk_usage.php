@@ -6,7 +6,7 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.2';
+const H4DU_VERSION = '0.2.3';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
 
 function help4_disk_usage_config()
@@ -204,13 +204,24 @@ function help4_disk_usage_clientarea($vars)
     }
 
     $clientId = (int)($_SESSION['uid'] ?? 0);
-    $accounts = Capsule::table('mod_help4_disk_usage_accounts')
-        ->where('client_id', $clientId)
-        ->orderBy('severity', 'asc')
-        ->orderBy('disk_bytes', 'desc')
-        ->get();
+    if ($clientId <= 0) {
+        $accounts = [];
+    } else {
+        $accounts = Capsule::table('mod_help4_disk_usage_accounts as a')
+            ->join('tblhosting as h', function ($join) {
+                $join->on('a.service_id', '=', 'h.id')
+                    ->on('a.whmcs_server_id', '=', 'h.server')
+                    ->on('a.username', '=', 'h.username');
+            })
+            ->where('h.userid', $clientId)
+            ->select('a.*', 'h.domain as current_domain')
+            ->orderBy('severity', 'asc')
+            ->orderBy('disk_bytes', 'desc')
+            ->get();
+    }
     $accountRows = json_decode(json_encode($accounts), true);
     foreach ($accountRows as &$accountRow) {
+        $accountRow['domain'] = $accountRow['current_domain'] ?: $accountRow['domain'];
         $hints = json_decode($accountRow['hints_json'] ?? '[]', true) ?: [];
         $accountRow['first_hint'] = $hints[0] ?? 'Review the latest scan before making cleanup decisions.';
     }
@@ -366,7 +377,7 @@ function help4_disk_usage_command_for_action($action, $vars)
         $limit = max(0, (int)($vars['syncAccountLimit'] ?? 0));
         $maxSeconds = max(15, (int)($vars['scanMaxSeconds'] ?? 90));
         $limitArg = $limit > 0 ? ' --account-limit ' . $limit : '';
-        return '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --max-seconds ' . $maxSeconds . ' --top 25 --write-cache' . $limitArg;
+        return '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --max-seconds ' . $maxSeconds . ' --top 25 --write-cache --lock-dir /var/cpanel/help4-disk-usage/locks' . $limitArg;
     }
 
     return 'test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan && '
@@ -442,10 +453,11 @@ function help4_disk_usage_save_scan_json($server, $json)
 
     foreach ($data['accounts'] as $account) {
         $username = (string)($account['user'] ?? '');
-        if ($username === '') {
+        if (!help4_disk_usage_valid_username($username)) {
             continue;
         }
         $severity = (string)($account['severity'] ?? 'unknown');
+        $severity = help4_disk_usage_valid_severity($severity);
         $bad += $severity === 'bad' ? 1 : 0;
         $check += $severity === 'check' ? 1 : 0;
         $service = help4_disk_usage_find_service($server->id, $username);
@@ -460,9 +472,9 @@ function help4_disk_usage_save_scan_json($server, $json)
                 'disk_bytes' => (int)($account['disk_bytes'] ?? 0),
                 'inode_count' => (int)($account['inode_count'] ?? 0),
                 'scanned_at' => help4_disk_usage_mysql_datetime($account['scanned_at'] ?? null),
-                'hints_json' => json_encode($account['remediation_hints'] ?? []),
-                'large_files_json' => json_encode($account['large_files'] ?? []),
-                'hotspots_json' => json_encode($account['category_hotspots'] ?? []),
+                'hints_json' => json_encode(help4_disk_usage_sanitize_text_list($account['remediation_hints'] ?? [])),
+                'large_files_json' => json_encode(help4_disk_usage_sanitize_scan_items($account['large_files'] ?? [], ['relative_path', 'bytes', 'mtime'])),
+                'hotspots_json' => json_encode(help4_disk_usage_sanitize_scan_items($account['category_hotspots'] ?? [], ['category', 'bytes', 'files', 'hint'])),
                 'updated_at' => date('Y-m-d H:i:s'),
                 'created_at' => date('Y-m-d H:i:s'),
             ]
@@ -493,6 +505,64 @@ function help4_disk_usage_find_service($serverId, $username)
         ->where('server', (int)$serverId)
         ->where('username', $username)
         ->first();
+}
+
+function help4_disk_usage_valid_username($username)
+{
+    return is_string($username) && preg_match('/\A[A-Za-z0-9_.-]{1,128}\z/', $username);
+}
+
+function help4_disk_usage_valid_severity($severity)
+{
+    $severity = strtolower((string)$severity);
+    return in_array($severity, ['bad', 'incomplete', 'check', 'good', 'unknown'], true) ? $severity : 'unknown';
+}
+
+function help4_disk_usage_sanitize_text_list($items)
+{
+    $out = [];
+    foreach ((array)$items as $item) {
+        if (!is_scalar($item)) {
+            continue;
+        }
+        $text = trim((string)$item);
+        if ($text === '') {
+            continue;
+        }
+        $out[] = substr($text, 0, 500);
+        if (count($out) >= 12) {
+            break;
+        }
+    }
+    return $out;
+}
+
+function help4_disk_usage_sanitize_scan_items($items, $allowedKeys)
+{
+    $out = [];
+    foreach ((array)$items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $row = [];
+        foreach ($allowedKeys as $key) {
+            if (!array_key_exists($key, $item)) {
+                continue;
+            }
+            if (in_array($key, ['bytes', 'files'], true)) {
+                $row[$key] = max(0, (int)$item[$key]);
+            } else {
+                $row[$key] = substr(trim((string)$item[$key]), 0, 500);
+            }
+        }
+        if ($row) {
+            $out[] = $row;
+        }
+        if (count($out) >= 25) {
+            break;
+        }
+    }
+    return $out;
 }
 
 function help4_disk_usage_record_server_state($server, $status, $extra = null, $error = null)
