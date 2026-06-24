@@ -40,7 +40,8 @@ if [ -e "$WHM_ICON_DIR/help4-disk-usage.png" ]; then
 fi
 
 install -d -m 0755 "$APP_DIR/bin" "$WHM_CGI_DIR" "$WHM_STATIC_DIR" "$WHM_ICON_DIR" "$CPANEL_DIR" /var/cpanel/apps
-install -d -m 0750 "$CACHE_DIR" "$CACHE_DIR/accounts"
+install -d -m 0755 "$CACHE_DIR"
+install -d -m 0750 "$CACHE_DIR/accounts"
 install -d -m 0755 "$LOCK_DIR"
 touch "$LOCK_DIR/scan.lock"
 chmod 0666 "$LOCK_DIR/scan.lock"

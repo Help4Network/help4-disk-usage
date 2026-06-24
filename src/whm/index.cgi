@@ -229,7 +229,7 @@ sub save_settings {
         return 'Settings not saved: package overrides must be valid JSON object.' if !$decoded || ref $decoded ne 'HASH';
         $cfg->{package_overrides} = sanitize_overrides($decoded, $cfg);
     }
-    make_path($CACHE_DIR, { mode => 0750 });
+    make_path($CACHE_DIR, { mode => 0755 });
     make_path($cfg->{scan_lock_dir}, { mode => 0755 });
     my $lock = File::Spec->catfile($cfg->{scan_lock_dir}, 'scan.lock');
     open my $lfh, '>>', $lock;

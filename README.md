@@ -117,8 +117,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.1.tar.gz
-cd help4-disk-usage-0.2.1
+tar -xzf help4-disk-usage-0.2.2.tar.gz
+cd help4-disk-usage-0.2.2
 sudo ./install.sh
 ```
 
