@@ -1,0 +1,452 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Find qw(find);
+use File::Path qw(make_path);
+use File::Spec;
+use Fcntl qw(:flock);
+use JSON::PP qw(encode_json decode_json);
+use POSIX qw(strftime);
+
+our $VERSION = '0.1.0';
+
+my %opt = (
+    scope          => 'all',
+    account        => '',
+    owner          => '',
+    home           => '',
+    cache_dir      => $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage',
+    fixture_root   => $ENV{HELP4_DU_FIXTURE_ROOT} || '',
+    max_seconds    => $ENV{HELP4_DU_MAX_SECONDS} || 90,
+    account_limit  => $ENV{HELP4_DU_ACCOUNT_LIMIT} || 0,
+    top            => $ENV{HELP4_DU_TOP} || 25,
+    large_mb       => $ENV{HELP4_DU_LARGE_MB} || 100,
+    stale_days     => $ENV{HELP4_DU_STALE_DAYS} || 180,
+    good_gb        => $ENV{HELP4_DU_GOOD_GB} || 25,
+    bad_gb         => $ENV{HELP4_DU_BAD_GB} || 75,
+    good_inodes    => $ENV{HELP4_DU_GOOD_INODES} || 100_000,
+    bad_inodes     => $ENV{HELP4_DU_BAD_INODES} || 250_000,
+    write_cache    => 0,
+    json           => 1,
+);
+
+while (@ARGV) {
+    my $arg = shift @ARGV;
+    if ($arg eq '--scope') { $opt{scope} = shift @ARGV // die "--scope needs a value\n"; }
+    elsif ($arg eq '--account') { $opt{account} = shift @ARGV // die "--account needs a value\n"; }
+    elsif ($arg eq '--owner') { $opt{owner} = shift @ARGV // die "--owner needs a value\n"; }
+    elsif ($arg eq '--home') { $opt{home} = shift @ARGV // die "--home needs a value\n"; }
+    elsif ($arg eq '--cache-dir') { $opt{cache_dir} = shift @ARGV // die "--cache-dir needs a value\n"; }
+    elsif ($arg eq '--fixture-root') { $opt{fixture_root} = shift @ARGV // die "--fixture-root needs a value\n"; }
+    elsif ($arg eq '--max-seconds') { $opt{max_seconds} = shift @ARGV // die "--max-seconds needs a value\n"; }
+    elsif ($arg eq '--account-limit') { $opt{account_limit} = shift @ARGV // die "--account-limit needs a value\n"; }
+    elsif ($arg eq '--top') { $opt{top} = shift @ARGV // die "--top needs a value\n"; }
+    elsif ($arg eq '--large-mb') { $opt{large_mb} = shift @ARGV // die "--large-mb needs a value\n"; }
+    elsif ($arg eq '--stale-days') { $opt{stale_days} = shift @ARGV // die "--stale-days needs a value\n"; }
+    elsif ($arg eq '--write-cache') { $opt{write_cache} = 1; }
+    elsif ($arg eq '--no-cache') { $opt{write_cache} = 0; }
+    elsif ($arg eq '--quiet') { $opt{json} = 0; }
+    elsif ($arg eq '--help' || $arg eq '-h') { print usage(); exit 0; }
+    else { die "Unknown argument: $arg\n"; }
+}
+
+die "--scope must be all, account, or owner\n" unless $opt{scope} =~ /\A(?:all|account|owner)\z/;
+die "--account is required for --scope account\n" if $opt{scope} eq 'account' && $opt{account} eq '';
+die "--owner is required for --scope owner\n" if $opt{scope} eq 'owner' && $opt{owner} eq '';
+die "--home must be an absolute path when provided\n" if $opt{home} ne '' && $opt{home} !~ m{\A/};
+
+my $started = time;
+my $cache_accounts_dir = File::Spec->catdir($opt{cache_dir}, 'accounts');
+my $lock_file = File::Spec->catfile($opt{cache_dir}, 'scan.lock');
+make_path($cache_accounts_dir, { mode => 0750 }) if $opt{write_cache};
+
+if ($opt{write_cache}) {
+    open my $lock_fh, '>>', $lock_file or die "Cannot open lock file $lock_file: $!\n";
+    flock($lock_fh, LOCK_EX | LOCK_NB) or die "Another Help4 Disk Usage scan is already running\n";
+}
+
+my @discovered_accounts = discover_accounts();
+my @accounts = select_accounts(\@discovered_accounts, \%opt);
+if ($opt{account_limit} && @accounts > $opt{account_limit}) {
+    @accounts = @accounts[0 .. $opt{account_limit} - 1];
+}
+
+my @results;
+for my $acct (@accounts) {
+    push @results, scan_account($acct, \%opt);
+}
+
+my $report = {
+    app                 => 'Help4 Disk Usage',
+    version             => $VERSION,
+    generated_at_epoch  => $started,
+    generated_at        => iso_time($started),
+    host                => safe_hostname(),
+    scope               => $opt{scope},
+    account_count       => scalar @results,
+    settings            => {
+        top         => int($opt{top}),
+        large_mb    => int($opt{large_mb}),
+        stale_days  => int($opt{stale_days}),
+        max_seconds => int($opt{max_seconds}),
+    },
+    accounts            => \@results,
+};
+
+if ($opt{write_cache}) {
+    for my $acct (@results) {
+        write_json_atomic(account_cache_path($acct->{user}), $acct);
+    }
+    write_json_atomic(File::Spec->catfile($opt{cache_dir}, 'latest.json'), $report);
+}
+
+print encode_json($report), "\n" if $opt{json};
+
+sub usage {
+    return <<"USAGE";
+Help4 Disk Usage scanner v$VERSION
+
+Usage:
+  help4-disk-usage-scan --scope all --write-cache
+  help4-disk-usage-scan --scope owner --owner reseller --write-cache
+  help4-disk-usage-scan --scope account --account USER --write-cache
+
+Environment:
+  HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
+  HELP4_DU_FIXTURE_ROOT=/tmp/fixture
+  HELP4_DU_MAX_SECONDS=90
+USAGE
+}
+
+sub discover_accounts {
+    if ($opt{scope} eq 'account' && $opt{home}) {
+        die "Home does not exist: $opt{home}\n" unless -d $opt{home};
+        return ({ user => $opt{account}, owner => $opt{owner} || $opt{account}, home => $opt{home} });
+    }
+
+    if ($opt{fixture_root}) {
+        my $root = $opt{fixture_root};
+        opendir my $dh, $root or die "Cannot open fixture root $root: $!\n";
+        my @fixture;
+        while (defined(my $name = readdir $dh)) {
+            next if $name =~ /^\./;
+            my $home = File::Spec->catdir($root, $name);
+            next unless -d $home;
+            push @fixture, { user => $name, owner => 'root', home => $home };
+        }
+        return sort { $a->{user} cmp $b->{user} } @fixture;
+    }
+
+    my @accounts;
+    if (-d '/var/cpanel/users') {
+        opendir my $dh, '/var/cpanel/users' or die "Cannot open /var/cpanel/users: $!\n";
+        while (defined(my $user = readdir $dh)) {
+            next if $user =~ /^\./;
+            my $file = "/var/cpanel/users/$user";
+            next unless -f $file;
+            my %meta = read_cpanel_user_file($file);
+            my $home = $meta{HOMEDIR} || passwd_home($user);
+            next unless $home && -d $home;
+            push @accounts, { user => $user, owner => ($meta{OWNER} || 'root'), home => $home };
+        }
+        return sort { $a->{user} cmp $b->{user} } @accounts;
+    }
+
+    open my $pw, '<', '/etc/passwd' or return;
+    while (defined(my $line = <$pw>)) {
+        chomp $line;
+        my ($user, undef, $uid, undef, undef, $home) = split /:/, $line;
+        next unless defined $home && $home =~ m{\A/home\d*/} && $uid >= 500 && -d $home;
+        push @accounts, { user => $user, owner => 'root', home => $home };
+    }
+    return sort { $a->{user} cmp $b->{user} } @accounts;
+}
+
+sub select_accounts {
+    my ($accounts, $opt_ref) = @_;
+    my @selected = @$accounts;
+    if ($opt_ref->{scope} eq 'account') {
+        @selected = grep { $_->{user} eq $opt_ref->{account} } @selected;
+    } elsif ($opt_ref->{scope} eq 'owner') {
+        @selected = grep { $_->{owner} eq $opt_ref->{owner} || $_->{user} eq $opt_ref->{owner} } @selected;
+    }
+    return @selected;
+}
+
+sub scan_account {
+    my ($acct, $opt_ref) = @_;
+    my $started = time;
+    my $home = $acct->{home};
+    my $home_dev = (lstat($home))[0];
+    my $deadline = $started + int($opt_ref->{max_seconds});
+    my $large_bytes = int($opt_ref->{large_mb}) * 1024 * 1024;
+    my $stale_before = time - int($opt_ref->{stale_days}) * 86400;
+    my (%dir_files, %dir_bytes, %hotspots);
+    my (@large_files, @stale_large);
+    my ($total_bytes, $inodes, $errors, $truncated) = (0, 0, 0, 0);
+
+    my $previous = read_previous_account_cache($acct->{user});
+
+    eval {
+        local $SIG{ALRM} = sub { die "SCAN_TIMEOUT\n"; };
+        alarm int($opt_ref->{max_seconds});
+        find({
+            no_chdir => 1,
+            wanted => sub {
+                my $path = $File::Find::name;
+                if (time > $deadline) {
+                    $truncated = 1;
+                    die "SCAN_TIMEOUT\n";
+                }
+                if (should_prune($path, $home)) {
+                    $File::Find::prune = 1 if -d _;
+                    return;
+                }
+                my @st = lstat($path);
+                if (!@st) {
+                    $errors++;
+                    return;
+                }
+                if (-d _ && defined $home_dev && $st[0] != $home_dev) {
+                    $File::Find::prune = 1;
+                    return;
+                }
+                $inodes++;
+                return unless -f _;
+
+                my ($size, $mtime) = ($st[7] || 0, $st[9] || 0);
+                $total_bytes += $size;
+                my $rel = rel_path($home, $path);
+                my $dir = rel_parent($rel);
+                $dir_files{$dir}++;
+                $dir_bytes{$dir} += $size;
+                for my $tag (classify_path($rel)) {
+                    $hotspots{$tag}{files}++;
+                    $hotspots{$tag}{bytes} += $size;
+                }
+                if ($size >= $large_bytes) {
+                    push @large_files, item($path, $rel, $size, $mtime);
+                    push @stale_large, item($path, $rel, $size, $mtime) if $mtime && $mtime < $stale_before;
+                }
+            },
+        }, $home);
+        alarm 0;
+    };
+    if ($@) {
+        $truncated = 1 if $@ =~ /SCAN_TIMEOUT/;
+        $errors++ unless $@ =~ /SCAN_TIMEOUT/;
+    }
+
+    @large_files = top_items(\@large_files, $opt_ref->{top}, 'bytes');
+    @stale_large = top_items(\@stale_large, $opt_ref->{top}, 'bytes');
+    my @inode_dirs = top_dirs(\%dir_files, \%dir_bytes, $opt_ref->{top}, 'files');
+    my @size_dirs = top_dirs(\%dir_files, \%dir_bytes, $opt_ref->{top}, 'bytes');
+    my @hotspot_rows = map {
+        {
+            category => $_,
+            files    => int($hotspots{$_}{files} || 0),
+            bytes    => int($hotspots{$_}{bytes} || 0),
+            hint     => hint_for($_),
+        }
+    } sort { ($hotspots{$b}{bytes} || 0) <=> ($hotspots{$a}{bytes} || 0) } keys %hotspots;
+
+    my $growth = growth_summary($previous, $total_bytes, $inodes);
+    my $severity = severity($total_bytes, $inodes, $truncated, \@large_files, \@hotspot_rows);
+
+    return {
+        user                => $acct->{user},
+        owner               => $acct->{owner},
+        home                => $home,
+        scanned_at_epoch    => time,
+        scanned_at          => iso_time(time),
+        duration_seconds    => time - $started,
+        scan_complete       => $truncated ? JSON::PP::false : JSON::PP::true,
+        errors              => int($errors),
+        severity            => $severity,
+        disk_bytes          => int($total_bytes),
+        inode_count         => int($inodes),
+        large_files         => \@large_files,
+        stale_large_files   => \@stale_large,
+        inode_hotspots      => \@inode_dirs,
+        size_hotspots       => \@size_dirs,
+        category_hotspots   => \@hotspot_rows,
+        growth              => $growth,
+        remediation_hints   => remediation_hints($severity, \@hotspot_rows, \@stale_large, $growth, $truncated),
+    };
+}
+
+sub read_cpanel_user_file {
+    my ($file) = @_;
+    my %meta;
+    open my $fh, '<', $file or return %meta;
+    while (defined(my $line = <$fh>)) {
+        chomp $line;
+        next unless $line =~ /\A([A-Z0-9_]+)=(.*)\z/;
+        $meta{$1} = $2;
+    }
+    return %meta;
+}
+
+sub passwd_home {
+    my ($user) = @_;
+    open my $pw, '<', '/etc/passwd' or return '';
+    while (defined(my $line = <$pw>)) {
+        my @p = split /:/, $line;
+        return $p[5] if @p > 5 && $p[0] eq $user;
+    }
+    return '';
+}
+
+sub should_prune {
+    my ($path, $home) = @_;
+    my $rel = rel_path($home, $path);
+    return 0 if $rel eq '.';
+    return $rel =~ m{\A(?:virtfs|\.cagefs|\.trash)(?:/|\z)};
+}
+
+sub rel_path {
+    my ($home, $path) = @_;
+    return '.' if $path eq $home;
+    $path =~ s{\A\Q$home\E/?}{};
+    return $path || '.';
+}
+
+sub rel_parent {
+    my ($rel) = @_;
+    return '.' unless $rel =~ m{/};
+    $rel =~ s{/[^/]+\z}{};
+    return $rel || '.';
+}
+
+sub classify_path {
+    my ($rel) = @_;
+    my @tags;
+    push @tags, 'cache' if $rel =~ m{(?:^|/)(?:cache|\.cache|wp-content/cache|lscache|LiteSpeed|autoptimize)(?:/|\z)}i;
+    push @tags, 'logs' if $rel =~ m{(?:^|/)(?:logs?|error_log|access_log)(?:[./]|\z)}i || $rel =~ /\.(?:log|err)\z/i;
+    push @tags, 'temp' if $rel =~ m{(?:^|/)(?:tmp|temp|sessions?|\.tmp)(?:/|\z)}i;
+    push @tags, 'backups' if $rel =~ m{(?:backup|backups|\.tar|\.tar\.gz|\.tgz|\.zip|\.sql|\.wpress|updraft|ai1wm)}i;
+    push @tags, 'mail' if $rel =~ m{(?:^|/)(?:mail|imap)(?:/|\z)}i;
+    push @tags, 'dependencies' if $rel =~ m{(?:^|/)(?:node_modules|vendor)(?:/|\z)}i;
+    push @tags, 'uploads' if $rel =~ m{(?:^|/)wp-content/uploads(?:/|\z)}i;
+    return @tags;
+}
+
+sub item {
+    my ($path, $rel, $bytes, $mtime) = @_;
+    return {
+        path          => $path,
+        relative_path => $rel,
+        bytes         => int($bytes),
+        mtime_epoch   => int($mtime || 0),
+        mtime         => $mtime ? iso_time($mtime) : '',
+    };
+}
+
+sub top_items {
+    my ($items, $limit, $key) = @_;
+    my @sorted = sort { ($b->{$key} || 0) <=> ($a->{$key} || 0) } @$items;
+    splice @sorted, $limit if @sorted > $limit;
+    return @sorted;
+}
+
+sub top_dirs {
+    my ($files, $bytes, $limit, $key) = @_;
+    my @rows = map {
+        {
+            relative_path => $_,
+            files         => int($files->{$_} || 0),
+            bytes         => int($bytes->{$_} || 0),
+        }
+    } keys %$files;
+    @rows = sort { ($b->{$key} || 0) <=> ($a->{$key} || 0) } @rows;
+    splice @rows, $limit if @rows > $limit;
+    return @rows;
+}
+
+sub severity {
+    my ($bytes, $inodes, $truncated, $large_files, $hotspots) = @_;
+    return 'incomplete' if $truncated;
+    return 'bad' if $bytes >= $opt{bad_gb} * 1024 * 1024 * 1024 || $inodes >= $opt{bad_inodes};
+    return 'check' if $bytes >= $opt{good_gb} * 1024 * 1024 * 1024 || $inodes >= $opt{good_inodes} || @$large_files || @$hotspots;
+    return 'good';
+}
+
+sub read_previous_account_cache {
+    my ($user) = @_;
+    my $path = account_cache_path($user);
+    return {} unless -f $path;
+    open my $fh, '<', $path or return {};
+    local $/;
+    my $json = <$fh>;
+    return eval { decode_json($json) } || {};
+}
+
+sub growth_summary {
+    my ($previous, $bytes, $inodes) = @_;
+    return { has_previous => JSON::PP::false } unless $previous && ref $previous eq 'HASH' && defined $previous->{disk_bytes};
+    my $old_bytes = int($previous->{disk_bytes} || 0);
+    my $old_inodes = int($previous->{inode_count} || 0);
+    return {
+        has_previous      => JSON::PP::true,
+        previous_scan     => $previous->{scanned_at} || '',
+        bytes_delta       => int($bytes - $old_bytes),
+        inode_delta       => int($inodes - $old_inodes),
+        bytes_delta_pct   => $old_bytes > 0 ? sprintf('%.2f', (($bytes - $old_bytes) / $old_bytes) * 100) + 0 : undef,
+        inode_delta_pct   => $old_inodes > 0 ? sprintf('%.2f', (($inodes - $old_inodes) / $old_inodes) * 100) + 0 : undef,
+    };
+}
+
+sub remediation_hints {
+    my ($severity, $hotspots, $stale_large, $growth, $truncated) = @_;
+    my @hints;
+    push @hints, 'Scan hit the runtime cap; rescan this account alone or raise HELP4_DU_MAX_SECONDS during off-peak hours.' if $truncated;
+    push @hints, 'Review old large files first; they are usually safer to archive or delete than active application files.' if @$stale_large;
+    for my $row (@$hotspots) {
+        push @hints, $row->{hint} if $row->{hint};
+    }
+    if ($growth->{has_previous} && (($growth->{bytes_delta_pct} || 0) >= 25 || ($growth->{inode_delta_pct} || 0) >= 25)) {
+        push @hints, 'Usage grew sharply since the previous scan; compare recent uploads, backups, logs, and cache jobs before increasing quota.';
+    }
+    push @hints, 'No urgent offender found. Keep the cache timestamp visible and rescan before quota or cleanup decisions.' if !@hints && $severity eq 'good';
+    my %seen;
+    return [ grep { !$seen{$_}++ } @hints ];
+}
+
+sub hint_for {
+    my ($tag) = @_;
+    return {
+        cache        => 'Cache directories are cleanup candidates after confirming the application can regenerate them.',
+        logs         => 'Large logs should be rotated, truncated safely, or moved into a retention policy.',
+        temp         => 'Temporary/session trees often contain stale files; inspect age before deletion.',
+        backups      => 'Backup archives and SQL dumps are frequent quota offenders; move needed copies off-account.',
+        mail         => 'Mailbox growth should be handled through mail retention, archive, or client cleanup.',
+        dependencies => 'Dependency trees can explode inode counts; remove unused builds and deployment leftovers.',
+        uploads      => 'Uploads need content review before deletion; start with duplicates, old media, and generated thumbnails.',
+    }->{$tag} || '';
+}
+
+sub write_json_atomic {
+    my ($path, $data) = @_;
+    my $tmp = "$path.$$";
+    open my $fh, '>', $tmp or die "Cannot write $tmp: $!\n";
+    print {$fh} JSON::PP->new->canonical->pretty->encode($data);
+    close $fh or die "Cannot close $tmp: $!\n";
+    chmod 0640, $tmp;
+    rename $tmp, $path or die "Cannot rename $tmp to $path: $!\n";
+}
+
+sub account_cache_path {
+    my ($user) = @_;
+    die "Invalid cPanel username: $user\n" unless $user =~ /\A[A-Za-z0-9_.-]+\z/;
+    return File::Spec->catfile($cache_accounts_dir, "$user.json");
+}
+
+sub iso_time {
+    my ($epoch) = @_;
+    return strftime('%Y-%m-%dT%H:%M:%SZ', gmtime($epoch));
+}
+
+sub safe_hostname {
+    chomp(my $host = `hostname -f 2>/dev/null || hostname 2>/dev/null`);
+    return $host || 'unknown';
+}

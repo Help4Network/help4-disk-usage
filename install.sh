@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Install must run as root on a cPanel & WHM server." >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+BACKUP_DIR="/root/help4-disk-usage-install-backups/${STAMP}"
+
+APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
+WHM_CGI_DIR="/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage"
+WHM_STATIC_DIR="/usr/local/cpanel/whostmgr/docroot/help4-disk-usage"
+WHM_ICON_DIR="/usr/local/cpanel/whostmgr/docroot/addon_plugins"
+CPANEL_DIR="/usr/local/cpanel/base/frontend/jupiter/help4_disk_usage"
+CACHE_DIR="/var/cpanel/help4-disk-usage"
+APP_CONF="/var/cpanel/apps/help4_disk_usage.conf"
+CRON_FILE="/etc/cron.d/help4-disk-usage"
+
+for required in /usr/local/cpanel/bin/register_appconfig /usr/local/cpanel/scripts/install_plugin; do
+  if [ ! -x "$required" ]; then
+    echo "Missing required cPanel command: $required" >&2
+    exit 2
+  fi
+done
+
+mkdir -p "$BACKUP_DIR"
+for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_STATIC_DIR" "$CPANEL_DIR" "$APP_CONF" "$CRON_FILE"; do
+  if [ -e "$path" ]; then
+    cp -a "$path" "$BACKUP_DIR/"
+  fi
+done
+if [ -e "$WHM_ICON_DIR/help4-disk-usage.png" ]; then
+  cp -a "$WHM_ICON_DIR/help4-disk-usage.png" "$BACKUP_DIR/"
+fi
+
+install -d -m 0755 "$APP_DIR/bin" "$WHM_CGI_DIR" "$WHM_STATIC_DIR" "$WHM_ICON_DIR" "$CPANEL_DIR" /var/cpanel/apps
+install -d -m 0750 "$CACHE_DIR" "$CACHE_DIR/accounts"
+
+install -m 0755 "$ROOT_DIR/src/bin/help4-disk-usage-scan" "$APP_DIR/bin/help4-disk-usage-scan"
+install -m 0755 "$ROOT_DIR/src/whm/index.cgi" "$WHM_CGI_DIR/index.cgi"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.css" "$WHM_STATIC_DIR/help4-disk-usage.css"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.png" "$WHM_ICON_DIR/help4-disk-usage.png"
+
+install -m 0755 "$ROOT_DIR/src/cpanel/index.live.pl" "$CPANEL_DIR/index.live.pl"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.css" "$CPANEL_DIR/help4-disk-usage.css"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.svg" "$CPANEL_DIR/help4-disk-usage.svg"
+
+install -m 0644 "$ROOT_DIR/packaging/help4_disk_usage.conf" /var/cpanel/apps/help4_disk_usage.conf
+/usr/local/cpanel/bin/register_appconfig /var/cpanel/apps/help4_disk_usage.conf
+
+/usr/local/cpanel/scripts/install_plugin "$ROOT_DIR/packaging" >/dev/null
+
+cat > "$CRON_FILE" <<'CRON'
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/cpanel/3rdparty/help4-disk-usage/bin
+
+17 */6 * * * root nice -n 10 ionice -c2 -n7 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --write-cache >> /var/log/help4-disk-usage-scan.log 2>&1
+CRON
+chmod 0644 "$CRON_FILE"
+
+echo "Help4 Disk Usage installed."
+echo "Backup/snapshot: $BACKUP_DIR"
+echo "WHM URL path: /cgi/help4_disk_usage/index.cgi"
+echo "cPanel Jupiter path: help4_disk_usage/index.live.pl"

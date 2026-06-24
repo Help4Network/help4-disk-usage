@@ -1,0 +1,15 @@
+[
+  {
+    "icon": "help4-disk-usage.svg",
+    "group_id": "metrics",
+    "order": 10020,
+    "name": "Help4 Disk Usage",
+    "type": "link",
+    "id": "help4_disk_usage",
+    "key": "help4_disk_usage",
+    "uri": "help4_disk_usage/index.live.pl",
+    "featuremanager": 1,
+    "feature": "help4_disk_usage",
+    "description": "Fast account-scoped disk and inode audit with actionable cleanup hints."
+  }
+]
