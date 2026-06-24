@@ -53,6 +53,8 @@ uninstall.sh                                          cPanel/WHM uninstaller
   - cache, log, temp, backup, mail, dependency, and upload hotspots
   - growth deltas when previous cache exists
 - Visible `scanned_at` timestamps and scan completeness.
+- Root-editable scan limits for WHM and cPanel refreshes.
+- Shared foreground scan lock so GUI refreshes do not stack.
 
 ### cPanel
 
@@ -61,6 +63,8 @@ uninstall.sh                                          cPanel/WHM uninstaller
 - Renders relative paths only.
 - Shows cleanup categories and plain remediation hints.
 - Does not expose other accounts or server-wide paths.
+- User-triggered refreshes are rate limited by default.
+- cPanel refresh limits can be overridden by cPanel package name.
 
 ### WHMCS
 
@@ -113,8 +117,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.0.tar.gz
-cd help4-disk-usage-0.2.0
+tar -xzf help4-disk-usage-0.2.1.tar.gz
+cd help4-disk-usage-0.2.1
 sudo ./install.sh
 ```
 
@@ -127,6 +131,8 @@ The installer:
 5. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
 6. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
 7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
+8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits.
+9. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
 
 ## Uninstall from a cPanel Server
 
@@ -229,7 +235,55 @@ HELP4_DU_TOP=50
 HELP4_DU_LARGE_MB=250
 HELP4_DU_STALE_DAYS=365
 HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
+HELP4_DU_LOCK_DIR=/var/cpanel/help4-disk-usage/locks
 ```
+
+## Scan Limits and Anti-Spam Controls
+
+Help4 Disk Usage is designed so refresh buttons cannot pile up expensive scans.
+
+Defaults:
+
+```json
+{
+  "whm_scan_max_seconds": 90,
+  "cpanel_refreshes_per_hour": 3,
+  "cpanel_min_interval_seconds": 300,
+  "cpanel_scan_max_seconds": 60,
+  "scan_lock_dir": "/var/cpanel/help4-disk-usage/locks",
+  "package_overrides": {}
+}
+```
+
+Root can edit these in WHM under **Help4 Disk Usage > Scan Limits**.
+
+Controls:
+
+- `scan_lock_dir`: shared lock directory. The installer creates a root-owned directory and a writable `scan.lock` file. WHM, cPanel, cron, and WHMCS-triggered installs should use the same lock so only one foreground/cache-writing scan runs at a time.
+- `whm_scan_max_seconds`: runtime cap for WHM-triggered scans.
+- `cpanel_refreshes_per_hour`: account-level hourly refresh cap for cPanel users.
+- `cpanel_min_interval_seconds`: minimum time between cPanel user refreshes.
+- `cpanel_scan_max_seconds`: runtime cap for cPanel user scans.
+- `package_overrides`: optional per-package cPanel limits.
+
+Package override example:
+
+```json
+{
+  "premium-hosting": {
+    "cpanel_refreshes_per_hour": 6,
+    "cpanel_min_interval_seconds": 120,
+    "cpanel_scan_max_seconds": 90
+  },
+  "starter-hosting": {
+    "cpanel_refreshes_per_hour": 2,
+    "cpanel_min_interval_seconds": 900,
+    "cpanel_scan_max_seconds": 45
+  }
+}
+```
+
+cPanel user throttle state is stored under the account's own `.cpanel/help4-disk-usage/rate.json`. It does not grant cross-account visibility.
 
 ## Security Model
 
@@ -240,6 +294,8 @@ HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
 - Scanner does not follow symlinks.
 - Scanner prunes `virtfs`, `.cagefs`, and `.trash`.
 - Scanner does not cross filesystem device boundaries from account home.
+- GUI-triggered scans use a shared non-blocking lock.
+- cPanel user refreshes are throttled by account and can be package-specific.
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
 - WHMCS client reports only show accounts mapped to that logged-in client.
@@ -251,6 +307,8 @@ Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 
 - background scans via cron
 - bounded foreground refreshes
+- shared scan locking
+- per-account cPanel refresh throttles
 - per-account JSON cache
 - atomic cache writes
 - explicit scan-complete flags

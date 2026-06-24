@@ -8,7 +8,7 @@ use Fcntl qw(:flock);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 
-our $VERSION = '0.2.0';
+our $VERSION = '0.2.1';
 
 my %opt = (
     scope          => 'all',
@@ -16,6 +16,7 @@ my %opt = (
     owner          => '',
     home           => '',
     cache_dir      => $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage',
+    lock_dir       => $ENV{HELP4_DU_LOCK_DIR} || '',
     fixture_root   => $ENV{HELP4_DU_FIXTURE_ROOT} || '',
     max_seconds    => $ENV{HELP4_DU_MAX_SECONDS} || 90,
     account_limit  => $ENV{HELP4_DU_ACCOUNT_LIMIT} || 0,
@@ -37,6 +38,7 @@ while (@ARGV) {
     elsif ($arg eq '--owner') { $opt{owner} = shift @ARGV // die "--owner needs a value\n"; }
     elsif ($arg eq '--home') { $opt{home} = shift @ARGV // die "--home needs a value\n"; }
     elsif ($arg eq '--cache-dir') { $opt{cache_dir} = shift @ARGV // die "--cache-dir needs a value\n"; }
+    elsif ($arg eq '--lock-dir') { $opt{lock_dir} = shift @ARGV // die "--lock-dir needs a value\n"; }
     elsif ($arg eq '--fixture-root') { $opt{fixture_root} = shift @ARGV // die "--fixture-root needs a value\n"; }
     elsif ($arg eq '--max-seconds') { $opt{max_seconds} = shift @ARGV // die "--max-seconds needs a value\n"; }
     elsif ($arg eq '--account-limit') { $opt{account_limit} = shift @ARGV // die "--account-limit needs a value\n"; }
@@ -54,14 +56,18 @@ die "--scope must be all, account, or owner\n" unless $opt{scope} =~ /\A(?:all|a
 die "--account is required for --scope account\n" if $opt{scope} eq 'account' && $opt{account} eq '';
 die "--owner is required for --scope owner\n" if $opt{scope} eq 'owner' && $opt{owner} eq '';
 die "--home must be an absolute path when provided\n" if $opt{home} ne '' && $opt{home} !~ m{\A/};
+$opt{lock_dir} ||= $opt{cache_dir};
+die "--lock-dir must be an absolute path when provided\n" if $opt{lock_dir} ne '' && $opt{lock_dir} !~ m{\A/};
 
 my $started = time;
 my $cache_accounts_dir = File::Spec->catdir($opt{cache_dir}, 'accounts');
-my $lock_file = File::Spec->catfile($opt{cache_dir}, 'scan.lock');
+my $lock_file = File::Spec->catfile($opt{lock_dir}, 'scan.lock');
 make_path($cache_accounts_dir, { mode => 0750 }) if $opt{write_cache};
+make_path($opt{lock_dir}, { mode => 0755 }) if $opt{write_cache} && !-d $opt{lock_dir};
 
 if ($opt{write_cache}) {
     open my $lock_fh, '>>', $lock_file or die "Cannot open lock file $lock_file: $!\n";
+    chmod 0666, $lock_file;
     flock($lock_fh, LOCK_EX | LOCK_NB) or die "Another Help4 Disk Usage scan is already running\n";
 }
 
@@ -113,6 +119,7 @@ Usage:
 
 Environment:
   HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
+  HELP4_DU_LOCK_DIR=/var/cpanel/help4-disk-usage/locks
   HELP4_DU_FIXTURE_ROOT=/tmp/fixture
   HELP4_DU_MAX_SECONDS=90
 USAGE

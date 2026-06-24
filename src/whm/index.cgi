@@ -2,23 +2,31 @@
 use strict;
 use warnings;
 use File::Spec;
+use File::Path qw(make_path);
 use JSON::PP qw(decode_json);
 use POSIX qw(strftime);
 
 my $APP = 'Help4 Disk Usage';
 my $CACHE_DIR = $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
+my $CONFIG_FILE = $ENV{HELP4_DU_CONFIG} || File::Spec->catfile($CACHE_DIR, 'config.json');
 my %q = parse_query($ENV{QUERY_STRING} || '');
 my $auth_user = $ENV{REMOTE_USER} || $ENV{USER} || '';
 $auth_user =~ s/[^A-Za-z0-9_.-]//g;
+my $config = load_config();
 
 my $notice = '';
 my $is_root = $auth_user eq 'root' || $> == 0 && !$auth_user;
 my %owned = map { $_ => 1 } owned_accounts($auth_user);
 $owned{$auth_user} = 1 if $auth_user && !$is_root;
 
+if ($q{save_settings} && $is_root) {
+    $notice = save_settings(\%q, $config);
+    $config = load_config();
+}
+
 if ($q{refresh}) {
-    my @cmd = ($SCANNER, '--write-cache', '--quiet', '--max-seconds', '90');
+    my @cmd = ($SCANNER, '--write-cache', '--quiet', '--lock-dir', $config->{scan_lock_dir}, '--max-seconds', $config->{whm_scan_max_seconds});
     if ($q{account}) {
         my $account = clean_user($q{account});
         if ($account && ($is_root || $owned{$account})) {
@@ -32,8 +40,9 @@ if ($q{refresh}) {
         push @cmd, ('--scope', 'owner', '--owner', $auth_user);
     }
     if (!$notice) {
+        local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
         system(@cmd);
-        $notice = $? == 0 ? 'Scan refreshed. Review the timestamps below.' : 'Scan command returned a non-zero status; existing cache is shown.';
+        $notice = $? == 0 ? 'Scan refreshed. Review the timestamps below.' : 'Scan is already running or returned a non-zero status; existing cache is shown.';
     }
 }
 
@@ -45,10 +54,10 @@ my @accounts = grep { allowed($_, $is_root, \%owned) } read_account_caches();
 } @accounts;
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
-print page(\@accounts, $notice, $auth_user, $is_root);
+print page(\@accounts, $notice, $auth_user, $is_root, $config);
 
 sub page {
-    my ($accounts, $notice, $auth_user, $is_root) = @_;
+    my ($accounts, $notice, $auth_user, $is_root, $config) = @_;
     my $total_bytes = 0;
     my $total_inodes = 0;
     my %sev;
@@ -62,6 +71,7 @@ sub page {
     $rows ||= '<tr><td colspan="8" class="muted">No scan cache exists yet. Run a refresh to collect data.</td></tr>';
     my $refresh_all = $is_root ? '<a class="button" href="?refresh=1">Refresh all accounts</a>' : '<a class="button" href="?refresh=1">Refresh owned accounts</a>';
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
+    my $settings = $is_root ? settings_panel($config) : '';
     return <<"HTML";
 <!doctype html>
 <html>
@@ -98,10 +108,32 @@ sub page {
         <tbody>$rows</tbody>
       </table>
     </section>
+    $settings
     <footer class="credit">Help4 Disk Usage by Help4 Network</footer>
   </main>
 </body>
 </html>
+HTML
+}
+
+sub settings_panel {
+    my ($cfg) = @_;
+    my $overrides = JSON::PP->new->canonical->pretty->encode($cfg->{package_overrides} || {});
+    return <<"HTML";
+    <section>
+      <h2>Scan Limits</h2>
+      <form method="get" class="settings-grid">
+        <input type="hidden" name="save_settings" value="1">
+        <label>WHM scan max seconds<input name="whm_scan_max_seconds" value="@{[h($cfg->{whm_scan_max_seconds})]}"></label>
+        <label>cPanel refreshes per hour<input name="cpanel_refreshes_per_hour" value="@{[h($cfg->{cpanel_refreshes_per_hour})]}"></label>
+        <label>cPanel min interval seconds<input name="cpanel_min_interval_seconds" value="@{[h($cfg->{cpanel_min_interval_seconds})]}"></label>
+        <label>cPanel scan max seconds<input name="cpanel_scan_max_seconds" value="@{[h($cfg->{cpanel_scan_max_seconds})]}"></label>
+        <label class="wide">Shared scan lock directory<input name="scan_lock_dir" value="@{[h($cfg->{scan_lock_dir})]}"></label>
+        <label class="wide">Package overrides JSON<textarea name="package_overrides_json" rows="8">@{[h($overrides)]}</textarea></label>
+        <div class="wide"><button class="button" type="submit">Save limits</button></div>
+      </form>
+      <p class="muted">All foreground scans use the shared lock, so only one scan runs at a time. cPanel user refreshes are also throttled by account and can be overridden by package name.</p>
+    </section>
 HTML
 }
 
@@ -152,6 +184,108 @@ sub read_account_caches {
         push @out, $data if $data && ref $data eq 'HASH';
     }
     return @out;
+}
+
+sub default_config {
+    return {
+        scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
+        whm_scan_max_seconds          => 90,
+        cpanel_refreshes_per_hour     => 3,
+        cpanel_min_interval_seconds   => 300,
+        cpanel_scan_max_seconds       => 60,
+        package_overrides             => {},
+    };
+}
+
+sub load_config {
+    my $cfg = default_config();
+    my $disk = read_json_file($CONFIG_FILE);
+    if ($disk && ref $disk eq 'HASH') {
+        for my $key (keys %$cfg) {
+            $cfg->{$key} = $disk->{$key} if exists $disk->{$key};
+        }
+    }
+    $cfg->{scan_lock_dir} ||= File::Spec->catdir($CACHE_DIR, 'locks');
+    $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
+    $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
+    $cfg->{cpanel_min_interval_seconds} = bounded_int($cfg->{cpanel_min_interval_seconds}, 0, 3600, 300);
+    $cfg->{cpanel_scan_max_seconds} = bounded_int($cfg->{cpanel_scan_max_seconds}, 10, 600, 60);
+    $cfg->{package_overrides} = {} unless ref $cfg->{package_overrides} eq 'HASH';
+    return $cfg;
+}
+
+sub save_settings {
+    my ($q, $current) = @_;
+    my $cfg = {
+        scan_lock_dir                 => clean_abs_path($q->{scan_lock_dir}) || $current->{scan_lock_dir},
+        whm_scan_max_seconds          => bounded_int($q->{whm_scan_max_seconds}, 10, 1800, $current->{whm_scan_max_seconds}),
+        cpanel_refreshes_per_hour     => bounded_int($q->{cpanel_refreshes_per_hour}, 1, 24, $current->{cpanel_refreshes_per_hour}),
+        cpanel_min_interval_seconds   => bounded_int($q->{cpanel_min_interval_seconds}, 0, 3600, $current->{cpanel_min_interval_seconds}),
+        cpanel_scan_max_seconds       => bounded_int($q->{cpanel_scan_max_seconds}, 10, 600, $current->{cpanel_scan_max_seconds}),
+        package_overrides             => $current->{package_overrides} || {},
+    };
+    if (defined $q->{package_overrides_json} && $q->{package_overrides_json} ne '') {
+        my $decoded = eval { decode_json($q->{package_overrides_json}) };
+        return 'Settings not saved: package overrides must be valid JSON object.' if !$decoded || ref $decoded ne 'HASH';
+        $cfg->{package_overrides} = sanitize_overrides($decoded, $cfg);
+    }
+    make_path($CACHE_DIR, { mode => 0750 });
+    make_path($cfg->{scan_lock_dir}, { mode => 0755 });
+    my $lock = File::Spec->catfile($cfg->{scan_lock_dir}, 'scan.lock');
+    open my $lfh, '>>', $lock;
+    close $lfh if $lfh;
+    chmod 0666, $lock if -e $lock;
+    write_json_file($CONFIG_FILE, $cfg) or return 'Settings not saved: unable to write config file.';
+    chmod 0644, $CONFIG_FILE;
+    return 'Scan limits saved.';
+}
+
+sub sanitize_overrides {
+    my ($raw, $defaults) = @_;
+    my %out;
+    for my $package (keys %$raw) {
+        next unless $package =~ /\A[A-Za-z0-9_.:-]+\z/ && ref $raw->{$package} eq 'HASH';
+        $out{$package} = {
+            cpanel_refreshes_per_hour   => bounded_int($raw->{$package}{cpanel_refreshes_per_hour}, 1, 24, $defaults->{cpanel_refreshes_per_hour}),
+            cpanel_min_interval_seconds => bounded_int($raw->{$package}{cpanel_min_interval_seconds}, 0, 3600, $defaults->{cpanel_min_interval_seconds}),
+            cpanel_scan_max_seconds     => bounded_int($raw->{$package}{cpanel_scan_max_seconds}, 10, 600, $defaults->{cpanel_scan_max_seconds}),
+        };
+    }
+    return \%out;
+}
+
+sub read_json_file {
+    my ($path) = @_;
+    return unless -f $path;
+    open my $fh, '<', $path or return;
+    local $/;
+    return eval { decode_json(<$fh>) };
+}
+
+sub write_json_file {
+    my ($path, $data) = @_;
+    my $tmp = "$path.$$";
+    open my $fh, '>', $tmp or return 0;
+    print {$fh} JSON::PP->new->canonical->pretty->encode($data);
+    close $fh or return 0;
+    rename $tmp, $path or return 0;
+    return 1;
+}
+
+sub clean_abs_path {
+    my ($path) = @_;
+    return '' unless defined $path && $path =~ m{\A/[A-Za-z0-9_./-]+\z};
+    $path =~ s{/+}{/}g;
+    return $path;
+}
+
+sub bounded_int {
+    my ($value, $min, $max, $default) = @_;
+    $value = $default unless defined $value && $value =~ /\A\d+\z/;
+    $value = int($value);
+    $value = $min if $value < $min;
+    $value = $max if $value > $max;
+    return $value;
 }
 
 sub owned_accounts {

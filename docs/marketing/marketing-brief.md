@@ -24,6 +24,7 @@ Help4 Disk Usage replaces slow, stale disk-usage guesswork with fresh scan times
 - WHMCS reports that map scan results to customers and services.
 - Less reliance on stale/default disk usage screens.
 - Safer cleanup because it reports and hints instead of deleting files.
+- Refresh buttons are guarded by shared scan locking and cPanel user rate limits.
 
 ## Feature Bullets
 
@@ -36,6 +37,8 @@ Help4 Disk Usage replaces slow, stale disk-usage guesswork with fresh scan times
 - Stale large file detection.
 - Growth hints when prior scan cache exists.
 - Customer-safe remediation hints.
+- One-scan-at-a-time lock for foreground/cache-writing scans.
+- WHM-editable cPanel refresh limits with package-specific overrides.
 - Permissive MIT licensing with visible Help4 credit.
 
 ## Customer-Facing Copy
@@ -45,6 +48,10 @@ Your hosting account can grow for reasons that are hard to see: backups, logs, c
 ## Support-Team Copy
 
 Stop guessing from quota totals. Help4 Disk Usage shows what changed, where the weight is, whether the issue is disk or inodes, and what category of cleanup to discuss with the customer.
+
+## Operations Copy
+
+Help4 Disk Usage is built for busy shared-hosting servers. GUI-triggered scans use a shared lock so scan jobs do not stack, cPanel account users are rate-limited by default, and root can tune refresh limits or override them by hosting package.
 
 ## Screenshot Checklist
 

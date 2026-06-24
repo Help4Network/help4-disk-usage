@@ -7,28 +7,38 @@ use JSON::PP qw(decode_json);
 
 my $APP = 'Help4 Disk Usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
+my $GLOBAL_CONFIG = $ENV{HELP4_DU_CONFIG} || '/var/cpanel/help4-disk-usage/config.json';
 my %q = parse_query($ENV{QUERY_STRING} || '');
 my $user = $ENV{REMOTE_USER} || $ENV{CPANEL_USER} || $ENV{USER} || getpwuid($<) || '';
 $user =~ s/[^A-Za-z0-9_.-]//g;
 my $home = $ENV{HOME} || (getpwnam($user))[7] || '';
 my $cache_dir = File::Spec->catdir($home || '/tmp', '.cpanel', 'help4-disk-usage');
 my $account_cache = File::Spec->catfile($cache_dir, 'accounts', "$user.json");
+my $config = load_config();
+my $limits = limits_for_user($user, $config);
 my $notice = '';
 
 if ($q{refresh} && $user && $home && -d $home) {
     make_path(File::Spec->catdir($cache_dir, 'accounts'), { mode => 0700 });
+    my ($allowed, $message) = allow_refresh($cache_dir, $limits);
+    if (!$allowed) {
+        $notice = $message;
+    } else {
     my @cmd = (
         $SCANNER,
         '--scope', 'account',
         '--account', $user,
         '--home', $home,
         '--cache-dir', $cache_dir,
-        '--max-seconds', '60',
+        '--lock-dir', $config->{scan_lock_dir},
+        '--max-seconds', $limits->{cpanel_scan_max_seconds},
         '--write-cache',
         '--quiet',
     );
+    local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
     system(@cmd);
-    $notice = $? == 0 ? 'Scan refreshed for this account.' : 'Scan command returned a non-zero status; existing cache is shown.';
+    $notice = $? == 0 ? 'Scan refreshed for this account.' : 'Scan is already running or returned a non-zero status; existing cache is shown.';
+    }
 }
 
 my $data = read_json($account_cache);
@@ -130,6 +140,107 @@ sub read_json {
     open my $fh, '<', $path or return;
     local $/;
     return eval { decode_json(<$fh>) };
+}
+
+sub default_config {
+    return {
+        scan_lock_dir                 => '/var/cpanel/help4-disk-usage/locks',
+        cpanel_refreshes_per_hour     => 3,
+        cpanel_min_interval_seconds   => 300,
+        cpanel_scan_max_seconds       => 60,
+        package_overrides             => {},
+    };
+}
+
+sub load_config {
+    my $cfg = default_config();
+    my $disk = read_json($GLOBAL_CONFIG);
+    if ($disk && ref $disk eq 'HASH') {
+        for my $key (keys %$cfg) {
+            $cfg->{$key} = $disk->{$key} if exists $disk->{$key};
+        }
+    }
+    $cfg->{scan_lock_dir} ||= '/var/cpanel/help4-disk-usage/locks';
+    $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
+    $cfg->{cpanel_min_interval_seconds} = bounded_int($cfg->{cpanel_min_interval_seconds}, 0, 3600, 300);
+    $cfg->{cpanel_scan_max_seconds} = bounded_int($cfg->{cpanel_scan_max_seconds}, 10, 600, 60);
+    $cfg->{package_overrides} = {} unless ref $cfg->{package_overrides} eq 'HASH';
+    return $cfg;
+}
+
+sub limits_for_user {
+    my ($user, $cfg) = @_;
+    my %limits = (
+        cpanel_refreshes_per_hour   => $cfg->{cpanel_refreshes_per_hour},
+        cpanel_min_interval_seconds => $cfg->{cpanel_min_interval_seconds},
+        cpanel_scan_max_seconds     => $cfg->{cpanel_scan_max_seconds},
+    );
+    my $package = account_package($user);
+    if ($package && $cfg->{package_overrides}{$package} && ref $cfg->{package_overrides}{$package} eq 'HASH') {
+        my $override = $cfg->{package_overrides}{$package};
+        for my $key (keys %limits) {
+            $limits{$key} = $override->{$key} if exists $override->{$key};
+        }
+        $limits{cpanel_refreshes_per_hour} = bounded_int($limits{cpanel_refreshes_per_hour}, 1, 24, $cfg->{cpanel_refreshes_per_hour});
+        $limits{cpanel_min_interval_seconds} = bounded_int($limits{cpanel_min_interval_seconds}, 0, 3600, $cfg->{cpanel_min_interval_seconds});
+        $limits{cpanel_scan_max_seconds} = bounded_int($limits{cpanel_scan_max_seconds}, 10, 600, $cfg->{cpanel_scan_max_seconds});
+    }
+    return \%limits;
+}
+
+sub account_package {
+    my ($user) = @_;
+    return '' unless $user =~ /\A[A-Za-z0-9_.-]+\z/;
+    my $file = "/var/cpanel/users/$user";
+    return '' unless -r $file;
+    open my $fh, '<', $file or return '';
+    while (defined(my $line = <$fh>)) {
+        chomp $line;
+        return $1 if $line =~ /\APLAN=(.+)\z/;
+    }
+    return '';
+}
+
+sub allow_refresh {
+    my ($cache_dir, $limits) = @_;
+    my $rate_path = File::Spec->catfile($cache_dir, 'rate.json');
+    my $now = time;
+    my $window = 3600;
+    my $state = read_json($rate_path) || {};
+    my @attempts = grep { $_ && $_ >= $now - $window } @{$state->{attempts} || []};
+    my $last = $state->{last_attempt} || 0;
+
+    if ($limits->{cpanel_min_interval_seconds} && $last && $now - $last < $limits->{cpanel_min_interval_seconds}) {
+        my $wait = $limits->{cpanel_min_interval_seconds} - ($now - $last);
+        return (0, 'Refresh throttled. Try again in about ' . int(($wait + 59) / 60) . ' minute(s).');
+    }
+    if (@attempts >= $limits->{cpanel_refreshes_per_hour}) {
+        my $reset = $attempts[0] + $window - $now;
+        return (0, 'Hourly refresh limit reached. Try again in about ' . int(($reset + 59) / 60) . ' minute(s).');
+    }
+
+    push @attempts, $now;
+    write_json($rate_path, { last_attempt => $now, attempts => \@attempts });
+    return (1, '');
+}
+
+sub write_json {
+    my ($path, $data) = @_;
+    my $tmp = "$path.$$";
+    open my $fh, '>', $tmp or return;
+    print {$fh} JSON::PP->new->canonical->pretty->encode($data);
+    close $fh or return;
+    chmod 0600, $tmp;
+    rename $tmp, $path;
+}
+
+sub bounded_int {
+    my ($value, $min, $max, $default) = @_;
+    $value = $default unless defined $value && $value =~ /\A\d+\z/;
+    $value = int($value);
+    $value = $min if $value < $min;
+    $value = $max if $value > $max;
+    return $value;
 }
 
 sub parse_query {
