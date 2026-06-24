@@ -12,15 +12,12 @@ PKG_DIR="$OUT_DIR/help4-disk-usage-${VERSION}"
 TARBALL="$OUT_DIR/help4-disk-usage-${VERSION}.tar.gz"
 
 rm -rf "$PKG_DIR" "$TARBALL"
-mkdir -p "$PKG_DIR" "$OUT_DIR"
+mkdir -p "$OUT_DIR"
 
-for path in README.md LICENSE NOTICE install.sh uninstall.sh src packaging integrations docs tests scripts; do
-  cp -a "$ROOT_DIR/$path" "$PKG_DIR/"
-done
+git -C "$ROOT_DIR" archive --format=tar --prefix="help4-disk-usage-${VERSION}/" HEAD \
+  | gzip -c > "$TARBALL"
 
-find "$PKG_DIR" -type f -name '.DS_Store' -delete
-find "$PKG_DIR" -type f -name '._*' -delete
-xattr -cr "$PKG_DIR" 2>/dev/null || true
-COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$TARBALL" "help4-disk-usage-${VERSION}"
+mkdir -p "$PKG_DIR"
+tar -xzf "$TARBALL" -C "$OUT_DIR"
 
 echo "$TARBALL"
