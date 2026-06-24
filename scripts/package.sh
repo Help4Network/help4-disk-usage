@@ -20,6 +20,7 @@ done
 
 find "$PKG_DIR" -type f -name '.DS_Store' -delete
 find "$PKG_DIR" -type f -name '._*' -delete
+xattr -cr "$PKG_DIR" 2>/dev/null || true
 COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$TARBALL" "help4-disk-usage-${VERSION}"
 
 echo "$TARBALL"
