@@ -8,6 +8,10 @@ Help4 Disk Usage gives hosting teams fast, support-ready disk and inode reports 
 
 Help4 Disk Usage replaces slow, stale disk-usage guesswork with fresh scan timestamps, account attribution, cleanup categories, and customer-safe remediation hints. It helps hosts identify backup, cache, log, mail, temp, upload, dependency, disk, and inode offenders from WHM, cPanel, and WHMCS.
 
+Public walkthrough:
+
+https://fixitphill.com/whm-cpanel/help4-disk-usage-cpanel-whm-whmcs-disk-inode-reports/
+
 ## Who It Helps
 
 - Shared hosting providers.

@@ -78,6 +78,14 @@ uninstall.sh                                          cPanel/WHM uninstaller
 - Client navbar link when enabled.
 - Event log for deploy/check/sync results.
 
+## Public Usage Walkthrough
+
+A public tutorial is available here:
+
+https://fixitphill.com/whm-cpanel/help4-disk-usage-cpanel-whm-whmcs-disk-inode-reports/
+
+The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md). Use the article for plain-language product and workflow explanation, and use this README for the current release version, install commands, and security notes.
+
 ## Requirements
 
 ### cPanel & WHM Plugin
