@@ -133,8 +133,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.7.tar.gz
-cd help4-disk-usage-0.2.7
+tar -xzf help4-disk-usage-0.2.8.tar.gz
+cd help4-disk-usage-0.2.8
 sudo ./install.sh
 ```
 
@@ -252,6 +252,8 @@ One-click actions require:
 - PHP `ssh2` extension installed in the WHMCS PHP runtime.
 - A WHMCS server record with a decryptable root/admin SSH password.
 - SSH access from WHMCS to the cPanel server.
+
+The addon uses its **Default SSH Port** setting for SSH. It does not use the WHMCS server record port, because cPanel server records commonly store the WHM/API port such as `2087`.
 
 If those are not available, use the manual command shown in the WHMCS module:
 

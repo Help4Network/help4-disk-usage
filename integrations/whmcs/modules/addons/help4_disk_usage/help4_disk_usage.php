@@ -6,7 +6,7 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.7';
+const H4DU_VERSION = '0.2.8';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
 
 function help4_disk_usage_config()
@@ -683,7 +683,7 @@ function help4_disk_usage_ssh_exec($server, $command, $defaultPort)
     }
 
     $host = $server->hostname ?: $server->ipaddress;
-    $port = (int)($server->port ?: $defaultPort ?: 22);
+    $port = (int)($defaultPort ?: 22);
     $user = $server->username ?: 'root';
     $password = help4_disk_usage_decrypt((string)$server->password);
 

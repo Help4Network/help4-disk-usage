@@ -57,6 +57,8 @@ Required:
 
 If any of these are missing, use the manual deployment command shown by the addon.
 
+The addon uses the addon setting **Default SSH Port** for SSH connections. It intentionally does not use the WHMCS server record port because cPanel server records commonly store WHM/API port `2087`.
+
 ## Updates from Repo or Release Tarball
 
 WHMCS **Check** asks the cPanel server to run `help4-disk-usage-update --check` when the updater is installed. It stores installed and available versions in the WHMCS server health row.

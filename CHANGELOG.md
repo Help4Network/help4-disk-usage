@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+- Fixed WHMCS SSH actions to use the addon SSH port setting instead of the WHMCS cPanel/WHM API port.
+- Documented the WHMCS SSH port behavior for cPanel server records.
+
 ## 0.2.7
 
 - Added backup-first update checks and apply flow from WHM and WHMCS.
@@ -28,4 +33,3 @@
 - Added scan limits, shared scan locking, and cPanel user refresh throttles.
 - Added package-specific cPanel refresh override support.
 - Tightened WHM/cPanel account-boundary checks.
-
