@@ -336,7 +336,7 @@ sub clean_url {
     my ($url) = @_;
     return '' unless defined $url;
     $url =~ s/^\s+|\s+\z//g;
-    return $url if $url =~ m{\Ahttps?://[A-Za-z0-9._~:/?#\[\]\@!$&'()*+,;=%-]+\z};
+    return $url if $url =~ m{\Ahttps?://[A-Za-z0-9._~:/?#\[\]\@!\$&'()*+,;=%-]+\z};
     return '';
 }
 
