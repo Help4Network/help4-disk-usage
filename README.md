@@ -37,6 +37,7 @@ tests/                                                Local scanner smoke tests
 scripts/package.sh                                    Release tarball builder
 install.sh                                            cPanel/WHM installer
 uninstall.sh                                          cPanel/WHM uninstaller
+CHANGELOG.md                                          Release history
 ```
 
 ## Main Features
@@ -125,6 +126,8 @@ outputs/help4-disk-usage-<version>.tar.gz
 
 The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packaging metadata.
 
+CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smoke tests, security-boundary smoke tests, and release packaging on pushes and pull requests.
+
 ## Install on a cPanel Server
 
 Upload the release tarball to the cPanel server and run:
@@ -171,6 +174,8 @@ sudo /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --a
 ```
 
 WHM root users can use **Help4 Disk Usage > Repository Updates** to check or apply the configured release. The release URL is stored in `/var/cpanel/help4-disk-usage/config.json` and defaults to the public GitHub `main.tar.gz` archive. For production, point it at an immutable GitHub Release tarball.
+
+Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 
 ## Uninstall from a cPanel Server
 

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Shell syntax
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n src/bin/help4-disk-usage-update
+          bash -n scripts/package.sh
+
+      - name: Perl syntax
+        run: |
+          perl -c src/bin/help4-disk-usage-scan
+          perl -c src/whm/index.cgi
+          perl -c src/cpanel/index.live.pl
+
+      - name: PHP syntax
+        run: |
+          php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
+          php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
+
+      - name: Scanner smoke tests
+        run: |
+          ./tests/smoke_scanner.sh
+          ./tests/security_boundaries.sh
+
+      - name: Build release tarball
+        run: ./scripts/package.sh
+
