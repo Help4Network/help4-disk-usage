@@ -9,7 +9,7 @@ use Fcntl qw(:flock);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 
-our $VERSION = '0.2.3';
+our $VERSION = '0.2.4';
 
 my %opt = (
     scope          => 'all',

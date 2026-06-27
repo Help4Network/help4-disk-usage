@@ -6,7 +6,7 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.3';
+const H4DU_VERSION = '0.2.4';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
 
 function help4_disk_usage_config()
@@ -153,17 +153,18 @@ function help4_disk_usage_upgrade($vars)
 function help4_disk_usage_output($vars)
 {
     $moduleLink = $vars['modulelink'];
-    $action = $_POST['h4du_action'] ?? $_GET['view'] ?? 'dashboard';
+    $view = $_GET['view'] ?? 'dashboard';
+    $postAction = $_POST['h4du_action'] ?? '';
     $message = null;
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         help4_disk_usage_check_token();
         $serverId = (int)($_POST['server_id'] ?? 0);
-        if ($action === 'check_server') {
+        if ($postAction === 'check_server') {
             $message = help4_disk_usage_check_server($serverId, $vars);
-        } elseif ($action === 'deploy_server') {
+        } elseif ($postAction === 'deploy_server') {
             $message = help4_disk_usage_deploy_server($serverId, $vars);
-        } elseif ($action === 'sync_server') {
+        } elseif ($postAction === 'sync_server') {
             $message = help4_disk_usage_sync_server($serverId, $vars);
         }
     }
@@ -172,16 +173,18 @@ function help4_disk_usage_output($vars)
     echo '<div class="h4du-wrap">';
     echo '<h1>Help4 Disk Usage</h1>';
     echo '<p class="h4du-muted">WHMCS deployment and support reporting for cPanel/WHM disk and inode scans.</p>';
-    echo help4_disk_usage_tabs($moduleLink, $action);
+    echo help4_disk_usage_tabs($moduleLink, $view);
     if ($message) {
         echo help4_disk_usage_notice($message['status'], $message['message']);
     }
 
-    if ($action === 'servers') {
+    if ($view === 'health') {
+        echo help4_disk_usage_health_page($moduleLink, $vars);
+    } elseif ($view === 'servers') {
         echo help4_disk_usage_servers_page($moduleLink, $vars);
-    } elseif ($action === 'accounts') {
+    } elseif ($view === 'accounts') {
         echo help4_disk_usage_accounts_page($moduleLink);
-    } elseif ($action === 'events') {
+    } elseif ($view === 'events') {
         echo help4_disk_usage_events_page();
     } else {
         echo help4_disk_usage_dashboard_page($moduleLink, $vars);
@@ -258,21 +261,73 @@ function help4_disk_usage_dashboard_page($moduleLink, $vars)
     $html .= help4_disk_usage_metric('Needs review', $checkCount);
     $html .= '</div>';
 
+    $html .= help4_disk_usage_health_summary($moduleLink, $vars);
     $html .= '<h2>Top Disk Offenders</h2>';
     $html .= help4_disk_usage_accounts_table($top, false);
-    $html .= '<p><a class="btn btn-primary" href="' . help4_disk_usage_e($moduleLink) . '&view=servers">Deploy or sync servers</a></p>';
+    $html .= '<p><a class="btn btn-primary" href="' . help4_disk_usage_e($moduleLink) . '&view=health">View server health</a> '
+        . '<a class="btn btn-default" href="' . help4_disk_usage_e($moduleLink) . '&view=servers">Deploy or sync servers</a></p>';
 
+    return $html;
+}
+
+function help4_disk_usage_health_page($moduleLink, $vars)
+{
+    $rows = help4_disk_usage_server_health_rows();
+    $counts = help4_disk_usage_health_counts($rows);
+
+    $html = '<h2>Server Health</h2>';
+    $html .= '<p class="h4du-muted">Operational health across WHMCS cPanel server records. Health combines plugin deployment state, last scan freshness, scan errors, and bad/check account counts.</p>';
+    $html .= '<div class="h4du-metrics">';
+    $html .= help4_disk_usage_metric('Healthy', $counts['healthy']);
+    $html .= help4_disk_usage_metric('Attention', $counts['attention']);
+    $html .= help4_disk_usage_metric('Stale', $counts['stale']);
+    $html .= help4_disk_usage_metric('Errors', $counts['error']);
+    $html .= help4_disk_usage_metric('Not Checked', $counts['not_checked']);
+    $html .= '</div>';
+    $html .= '<table class="datatable h4du-table"><thead><tr><th>Server</th><th>Health</th><th>Last Scan</th><th>Coverage</th><th>Findings</th><th>Last Error</th><th>Next Step</th><th>Actions</th></tr></thead><tbody>';
+
+    foreach ($rows as $row) {
+        $server = $row['server'];
+        $state = $row['state'];
+        $html .= '<tr>';
+        $html .= '<td><strong>' . help4_disk_usage_e($server->name ?: ('Server #' . $server->id)) . '</strong><br><span class="h4du-muted">' . help4_disk_usage_e($server->hostname ?: $server->ipaddress ?: 'no host') . '</span></td>';
+        $html .= '<td>' . help4_disk_usage_badge($row['health']) . '<br><span class="h4du-muted">' . help4_disk_usage_e($state->status ?? 'not checked') . '</span></td>';
+        $html .= '<td>' . help4_disk_usage_e($state->last_scan_at ?? 'never') . '<br><span class="h4du-muted">' . help4_disk_usage_e($row['scan_age']) . '</span></td>';
+        $html .= '<td>' . (int)($state->account_count ?? 0) . ' scanned accounts</td>';
+        $html .= '<td>' . (int)($state->bad_count ?? 0) . ' bad<br>' . (int)($state->check_count ?? 0) . ' check</td>';
+        $html .= '<td>' . help4_disk_usage_e($state->last_error ?? '') . '</td>';
+        $html .= '<td>' . help4_disk_usage_e($row['next_step']) . '</td>';
+        $html .= '<td>' . help4_disk_usage_server_action_form($moduleLink, $server->id, 'check_server', 'Check', 'health') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'deploy_server', 'Deploy', 'health') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'sync_server', 'Sync', 'health') . '</td>';
+        $html .= '</tr>';
+    }
+
+    if (!$rows) {
+        $html .= '<tr><td colspan="8">No cPanel/WHM server records were found in WHMCS.</td></tr>';
+    }
+
+    return $html . '</tbody></table>';
+}
+
+function help4_disk_usage_health_summary($moduleLink, $vars)
+{
+    $rows = help4_disk_usage_server_health_rows();
+    $counts = help4_disk_usage_health_counts($rows);
+    $html = '<h2>Server Health</h2>';
+    $html .= '<div class="h4du-metrics compact">';
+    $html .= help4_disk_usage_metric('Healthy', $counts['healthy']);
+    $html .= help4_disk_usage_metric('Attention', $counts['attention']);
+    $html .= help4_disk_usage_metric('Stale', $counts['stale']);
+    $html .= help4_disk_usage_metric('Errors', $counts['error']);
+    $html .= '</div>';
+    $html .= '<p><a class="btn btn-default" href="' . help4_disk_usage_e($moduleLink) . '&view=health">Open server health</a></p>';
     return $html;
 }
 
 function help4_disk_usage_servers_page($moduleLink, $vars)
 {
-    $servers = Capsule::table('tblservers')
-        ->select('id', 'name', 'hostname', 'ipaddress', 'type', 'username', 'disabled')
-        ->whereIn('type', ['cpanel', 'cpanelExtended', 'whm'])
-        ->orWhere('type', 'like', '%cpanel%')
-        ->orderBy('name')
-        ->get();
+    $servers = help4_disk_usage_cpanel_servers();
 
     $html = '<h2>cPanel/WHM Servers</h2>';
     $html .= '<p class="h4du-muted">Check verifies installed files. Deploy installs the plugin over SSH when PHP ssh2 and WHMCS server credentials are available. Sync runs a bounded scan and stores customer-facing summaries.</p>';
@@ -287,9 +342,9 @@ function help4_disk_usage_servers_page($moduleLink, $vars)
         $html .= '<td>' . help4_disk_usage_badge($state->status ?? 'unknown') . '</td>';
         $html .= '<td>' . help4_disk_usage_e($state->last_scan_at ?? 'never') . '</td>';
         $html .= '<td>' . (int)($state->account_count ?? 0) . ' accounts<br>' . (int)($state->bad_count ?? 0) . ' bad / ' . (int)($state->check_count ?? 0) . ' check</td>';
-        $html .= '<td>' . help4_disk_usage_server_action_form($moduleLink, $server->id, 'check_server', 'Check') . ' '
-            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'deploy_server', 'Deploy') . ' '
-            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'sync_server', 'Sync') . '</td>';
+        $html .= '<td>' . help4_disk_usage_server_action_form($moduleLink, $server->id, 'check_server', 'Check', 'servers') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'deploy_server', 'Deploy', 'servers') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'sync_server', 'Sync', 'servers') . '</td>';
         $html .= '</tr>';
     }
 
@@ -297,6 +352,108 @@ function help4_disk_usage_servers_page($moduleLink, $vars)
     $html .= '<h3>Manual Deployment Command</h3>';
     $html .= '<pre class="h4du-pre">' . help4_disk_usage_e(help4_disk_usage_install_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL)) . '</pre>';
     return $html;
+}
+
+function help4_disk_usage_cpanel_servers()
+{
+    return Capsule::table('tblservers')
+        ->select('id', 'name', 'hostname', 'ipaddress', 'type', 'username', 'disabled')
+        ->where(function ($query) {
+            $query->whereIn('type', ['cpanel', 'cpanelExtended', 'whm'])
+                ->orWhere('type', 'like', '%cpanel%');
+        })
+        ->orderBy('name')
+        ->get();
+}
+
+function help4_disk_usage_cpanel_server($serverId)
+{
+    return Capsule::table('tblservers')
+        ->select('id', 'name', 'hostname', 'ipaddress', 'type', 'username', 'password', 'port', 'disabled')
+        ->where('id', (int)$serverId)
+        ->where(function ($query) {
+            $query->whereIn('type', ['cpanel', 'cpanelExtended', 'whm'])
+                ->orWhere('type', 'like', '%cpanel%');
+        })
+        ->first();
+}
+
+function help4_disk_usage_server_health_rows()
+{
+    $rows = [];
+    foreach (help4_disk_usage_cpanel_servers() as $server) {
+        $state = Capsule::table('mod_help4_disk_usage_servers')->where('whmcs_server_id', $server->id)->first();
+        $health = help4_disk_usage_server_health($server, $state);
+        $rows[] = [
+            'server' => $server,
+            'state' => $state ?: (object)[],
+            'health' => $health['status'],
+            'next_step' => $health['next_step'],
+            'scan_age' => $health['scan_age'],
+            'sort' => $health['sort'],
+        ];
+    }
+    usort($rows, function ($a, $b) {
+        return $a['sort'] <=> $b['sort'];
+    });
+    return $rows;
+}
+
+function help4_disk_usage_server_health($server, $state)
+{
+    if ((int)($server->disabled ?? 0) === 1) {
+        return ['status' => 'disabled', 'next_step' => 'Server is disabled in WHMCS.', 'scan_age' => 'disabled', 'sort' => 90];
+    }
+    if (!$state) {
+        return ['status' => 'not_checked', 'next_step' => 'Run Check, then Deploy if the plugin is missing.', 'scan_age' => 'never', 'sort' => 50];
+    }
+    if (($state->status ?? '') === 'error' || (string)($state->last_error ?? '') !== '') {
+        return ['status' => 'error', 'next_step' => 'Review the last error, then run Check after fixing access or server state.', 'scan_age' => help4_disk_usage_age($state->last_scan_at ?? null), 'sort' => 10];
+    }
+    if (!$state->last_scan_at) {
+        return ['status' => 'not_synced', 'next_step' => 'Run Sync to collect the first server scan.', 'scan_age' => 'never', 'sort' => 40];
+    }
+
+    $ageSeconds = time() - strtotime((string)$state->last_scan_at);
+    if ($ageSeconds > 86400) {
+        return ['status' => 'stale', 'next_step' => 'Run Sync; last scan is older than 24 hours.', 'scan_age' => help4_disk_usage_age($state->last_scan_at), 'sort' => 20];
+    }
+    if ((int)($state->bad_count ?? 0) > 0 || (int)($state->check_count ?? 0) > 0) {
+        return ['status' => 'attention', 'next_step' => 'Review Customer Reports for bad/check accounts.', 'scan_age' => help4_disk_usage_age($state->last_scan_at), 'sort' => 30];
+    }
+    return ['status' => 'healthy', 'next_step' => 'No immediate action needed.', 'scan_age' => help4_disk_usage_age($state->last_scan_at), 'sort' => 80];
+}
+
+function help4_disk_usage_health_counts($rows)
+{
+    $counts = ['healthy' => 0, 'attention' => 0, 'stale' => 0, 'error' => 0, 'not_checked' => 0, 'not_synced' => 0, 'disabled' => 0];
+    foreach ($rows as $row) {
+        $key = $row['health'];
+        if (!isset($counts[$key])) {
+            $counts[$key] = 0;
+        }
+        $counts[$key]++;
+    }
+    return $counts;
+}
+
+function help4_disk_usage_age($datetime)
+{
+    if (!$datetime) {
+        return 'never';
+    }
+    $ts = strtotime((string)$datetime);
+    if (!$ts) {
+        return 'unknown age';
+    }
+    $seconds = max(0, time() - $ts);
+    if ($seconds < 3600) {
+        return floor($seconds / 60) . ' minutes ago';
+    }
+    if ($seconds < 86400) {
+        return floor($seconds / 3600) . ' hours ago';
+    }
+    return floor($seconds / 86400) . ' days ago';
 }
 
 function help4_disk_usage_accounts_page($moduleLink)
@@ -342,9 +499,12 @@ function help4_disk_usage_sync_server($serverId, $vars)
 
 function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
 {
-    $server = Capsule::table('tblservers')->where('id', $serverId)->first();
+    $server = help4_disk_usage_cpanel_server($serverId);
     if (!$server) {
-        return ['status' => 'error', 'message' => 'Server not found.'];
+        return ['status' => 'error', 'message' => 'cPanel/WHM server not found or not eligible for Help4 Disk Usage actions.'];
+    }
+    if ((int)($server->disabled ?? 0) === 1) {
+        return ['status' => 'error', 'message' => 'Server is disabled in WHMCS. Enable it before running Help4 Disk Usage actions.'];
     }
 
     $command = help4_disk_usage_command_for_action($action, $vars);
@@ -621,9 +781,10 @@ function help4_disk_usage_accounts_table($rows, $showClient)
     return $html . '</tbody></table>';
 }
 
-function help4_disk_usage_server_action_form($moduleLink, $serverId, $action, $label)
+function help4_disk_usage_server_action_form($moduleLink, $serverId, $action, $label, $returnView = 'servers')
 {
-    return '<form method="post" action="' . help4_disk_usage_e($moduleLink) . '&view=servers" class="h4du-inline">'
+    $safeView = preg_replace('/[^a-z0-9_-]/i', '', (string)$returnView) ?: 'servers';
+    return '<form method="post" action="' . help4_disk_usage_e($moduleLink) . '&view=' . help4_disk_usage_e($safeView) . '" class="h4du-inline">'
         . help4_disk_usage_token_field()
         . '<input type="hidden" name="h4du_action" value="' . help4_disk_usage_e($action) . '">'
         . '<input type="hidden" name="server_id" value="' . (int)$serverId . '">'
@@ -635,6 +796,7 @@ function help4_disk_usage_tabs($moduleLink, $active)
 {
     $tabs = [
         'dashboard' => 'Dashboard',
+        'health' => 'Server Health',
         'servers' => 'Servers & Deploy',
         'accounts' => 'Customer Reports',
         'events' => 'Events',
@@ -711,7 +873,7 @@ function help4_disk_usage_admin_css()
     .h4du-wrap{max-width:1280px}.h4du-muted{color:#687386}.h4du-tabs{margin:18px 0}.h4du-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:16px 0}
     .h4du-metrics div{border:1px solid #d9dee7;background:#fff;border-radius:4px;padding:12px}.h4du-metrics strong{display:block;font-size:22px}.h4du-metrics span{color:#687386}
     .h4du-table td,.h4du-table th{vertical-align:top}.h4du-inline{display:inline-block;margin:0 2px 4px 0}.h4du-pre{white-space:pre-wrap;background:#f6f7f9;border:1px solid #d9dee7;padding:12px;border-radius:4px}
-    .h4du-badge{display:inline-block;padding:3px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;background:#e8ebf0}.h4du-good,.h4du-installed,.h4du-synced,.h4du-success{background:#dff8e8;color:#075e2a}
-    .h4du-check{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}
+    .h4du-badge{display:inline-block;padding:3px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;background:#e8ebf0}.h4du-good,.h4du-installed,.h4du-synced,.h4du-success,.h4du-healthy{background:#dff8e8;color:#075e2a}
+    .h4du-check,.h4du-attention,.h4du-stale,.h4du-not_synced,.h4du-not_checked{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-disabled{background:#e8ebf0;color:#687386}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}
     </style>';
 }

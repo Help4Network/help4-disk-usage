@@ -17,12 +17,29 @@ Then activate **Help4 Disk Usage** in **System Settings > Addon Modules**.
 ## What WHMCS Gets
 
 - Admin dashboard for disk/inode scan state across cPanel servers.
+- Server Health tab for WHMCS admins and support leads.
 - Server deployment/check/sync controls.
 - Manual deployment command for hosts without PHP `ssh2`.
 - Customer report table mapped to WHMCS services.
 - Client-area page at `index.php?m=help4_disk_usage`.
 - Client navbar link when client reports are enabled.
 - Event log for deployment and sync attempts.
+
+## Server Health View
+
+Open **Addons > Help4 Disk Usage > Server Health** to see the operational state of every WHMCS cPanel/WHM server record.
+
+The view highlights:
+
+- Healthy, attention, stale, error, not checked, and not synced counts.
+- Last scan timestamp and age.
+- Scanned account coverage.
+- Bad/check account counts.
+- Last deploy/check/sync error.
+- Recommended next step per server.
+- Check, Deploy, and Sync actions for eligible cPanel/WHM server records.
+
+The health view is for WHMCS administrators. Customer-facing output remains scoped to the logged-in client's currently mapped services.
 
 ## One-Click Deploy Requirements
 
@@ -72,5 +89,7 @@ Deactivation retains the tables so support history is preserved.
 
 - WHMCS does not delete files.
 - WHMCS does not show unmapped account data to clients.
+- Deploy/check/sync actions are limited to cPanel/WHM-like WHMCS server records.
+- Disabled WHMCS server records are rejected before SSH actions run.
 - Client reports use summarized findings and remediation hints.
 - Admins should review server credentials and SSH trust boundaries before enabling one-click deployment.

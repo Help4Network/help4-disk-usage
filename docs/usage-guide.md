@@ -24,8 +24,9 @@ Use that article when you need a plain-language explanation for hosting teams, s
 3. Review WHM for bad/check accounts by disk and inode pressure.
 4. Look at the top issue category before opening a customer ticket.
 5. Sync to WHMCS when support staff need service/customer mapping.
-6. Send customers to the WHMCS client report or cPanel account page when self-service reporting is appropriate.
-7. Use remediation hints as discussion points, not as automatic cleanup instructions.
+6. Use the WHMCS Server Health tab to watch stale scans, scan errors, bad/check counts, and server coverage.
+7. Send customers to the WHMCS client report or cPanel account page when self-service reporting is appropriate.
+8. Use remediation hints as discussion points, not as automatic cleanup instructions.
 
 ## Safety Notes for Tutorial Writers
 
@@ -36,6 +37,7 @@ Use that article when you need a plain-language explanation for hosting teams, s
 - Mention that foreground scans use a shared lock.
 - Mention that cPanel user refreshes are rate-limited.
 - Mention that root can tune scan limits and package-specific overrides in WHM.
+- Mention that WHMCS Server Health is the admin/support view for server coverage, scan freshness, and failures.
 - Mention that WHMCS client rows are scoped to the logged-in client's current mapped hosting services.
 
 ## Version Note

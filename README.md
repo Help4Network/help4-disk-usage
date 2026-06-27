@@ -70,8 +70,10 @@ uninstall.sh                                          cPanel/WHM uninstaller
 
 - Addon module under `modules/addons/help4_disk_usage`.
 - Admin dashboard for synced servers and offender accounts.
+- Admin **Server Health** view across WHMCS cPanel server records.
 - cPanel server list from WHMCS `tblservers`.
 - Deployment/check/sync actions for cPanel servers.
+- Health states for missing, stale, erroring, disabled, attention-needed, and healthy servers.
 - Manual deployment command when one-click SSH deploy is unavailable.
 - Per-account scan data mapped to `tblhosting` by server ID and cPanel username.
 - Customer-area report at `index.php?m=help4_disk_usage`.
@@ -125,8 +127,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.3.tar.gz
-cd help4-disk-usage-0.2.3
+tar -xzf help4-disk-usage-0.2.4.tar.gz
+cd help4-disk-usage-0.2.4
 sudo ./install.sh
 ```
 
@@ -190,7 +192,18 @@ Deactivation keeps these tables intentionally so support history is not lost.
 
 ## WHMCS Deployment Workflow
 
-Open **Addons > Help4 Disk Usage > Servers & Deploy**.
+Open **Addons > Help4 Disk Usage > Server Health** for the support/admin operations view.
+
+Server Health shows:
+
+- Healthy, attention, stale, error, not checked, not synced, and disabled server counts.
+- Last scan age and scanned account coverage.
+- Bad/check finding counts per server.
+- Last error text from deploy/check/sync.
+- Next-step guidance for each server.
+- Check, Deploy, and Sync actions for eligible cPanel/WHM server records.
+
+Open **Addons > Help4 Disk Usage > Servers & Deploy** for the install/sync workflow.
 
 For each cPanel server, WHMCS provides:
 
@@ -306,6 +319,7 @@ cPanel user throttle state is stored under the account's own `.cpanel/help4-disk
 - cPanel user refreshes are throttled by account and can be package-specific.
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
+- WHMCS deploy/check/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
 - WHMCS strips absolute scanner paths before storing support summary lists.
 - WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
 - JSON cache files should not be made web-accessible.
