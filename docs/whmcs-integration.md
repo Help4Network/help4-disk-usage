@@ -17,6 +17,7 @@ Then activate **Help4 Disk Usage** in **System Settings > Addon Modules**.
 ## What WHMCS Gets
 
 - Admin dashboard for disk/inode scan state across cPanel servers.
+- WHMCS admin-home widget with health counts and prioritized cPanel server rows.
 - Server Health tab for WHMCS admins and support leads.
 - Server deployment/check/sync controls.
 - Manual deployment command for hosts without PHP `ssh2`.
@@ -26,6 +27,8 @@ Then activate **Help4 Disk Usage** in **System Settings > Addon Modules**.
 - Event log for deployment and sync attempts.
 
 ## Server Health View
+
+The WHMCS admin home dashboard includes a **Help4 Disk Usage Health** widget. It shows health counts, the highest-priority server rows, and a direct link to the full health page.
 
 Open **Addons > Help4 Disk Usage > Server Health** to see the operational state of every WHMCS cPanel/WHM server record.
 

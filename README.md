@@ -70,6 +70,7 @@ uninstall.sh                                          cPanel/WHM uninstaller
 
 - Addon module under `modules/addons/help4_disk_usage`.
 - Admin dashboard for synced servers and offender accounts.
+- WHMCS admin-home widget with health counts and prioritized server rows.
 - Admin **Server Health** view across WHMCS cPanel server records.
 - cPanel server list from WHMCS `tblservers`.
 - Deployment/check/sync actions for cPanel servers.
@@ -127,8 +128,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.4.tar.gz
-cd help4-disk-usage-0.2.4
+tar -xzf help4-disk-usage-0.2.5.tar.gz
+cd help4-disk-usage-0.2.5
 sudo ./install.sh
 ```
 
@@ -192,7 +193,9 @@ Deactivation keeps these tables intentionally so support history is not lost.
 
 ## WHMCS Deployment Workflow
 
-Open **Addons > Help4 Disk Usage > Server Health** for the support/admin operations view.
+WHMCS admins also get a **Help4 Disk Usage Health** widget on the WHMCS admin home dashboard. It shows health counts, the highest-priority cPanel server rows, and a direct link to the full health page.
+
+Open **Addons > Help4 Disk Usage > Server Health** for the full support/admin operations view.
 
 Server Health shows:
 

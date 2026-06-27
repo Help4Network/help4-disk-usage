@@ -35,6 +35,7 @@ https://fixitphill.com/whm-cpanel/help4-disk-usage-cpanel-whm-whmcs-disk-inode-r
 - WHM root and reseller dashboards.
 - cPanel customer account dashboard.
 - WHMCS addon module for deployment and reporting.
+- WHMCS admin-home health widget.
 - WHMCS Server Health tab for support/admin visibility across cPanel servers.
 - Background scans with visible timestamps.
 - Largest-file and inode-heavy directory detection.
@@ -63,6 +64,7 @@ Help4 Disk Usage is built for busy shared-hosting servers. GUI-triggered scans u
 - WHM root dashboard showing visible accounts and offenders.
 - cPanel account dashboard showing relative-path cleanup hints.
 - WHMCS server deployment page.
+- WHMCS admin-home health widget.
 - WHMCS Server Health admin page.
 - WHMCS customer report table.
 - WHMCS client-area report page.
