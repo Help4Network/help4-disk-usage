@@ -6,7 +6,7 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.5';
+const H4DU_VERSION = '0.2.6';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
 
 function help4_disk_usage_config()
@@ -164,6 +164,8 @@ function help4_disk_usage_output($vars)
             $message = help4_disk_usage_check_server($serverId, $vars);
         } elseif ($postAction === 'deploy_server') {
             $message = help4_disk_usage_deploy_server($serverId, $vars);
+        } elseif ($postAction === 'update_server') {
+            $message = help4_disk_usage_update_server($serverId, $vars);
         } elseif ($postAction === 'sync_server') {
             $message = help4_disk_usage_sync_server($serverId, $vars);
         }
@@ -280,6 +282,7 @@ function help4_disk_usage_health_page($moduleLink, $vars)
     $html .= '<div class="h4du-metrics">';
     $html .= help4_disk_usage_metric('Healthy', $counts['healthy']);
     $html .= help4_disk_usage_metric('Attention', $counts['attention']);
+    $html .= help4_disk_usage_metric('Updates', $counts['update_available']);
     $html .= help4_disk_usage_metric('Stale', $counts['stale']);
     $html .= help4_disk_usage_metric('Errors', $counts['error']);
     $html .= help4_disk_usage_metric('Not Checked', $counts['not_checked']);
@@ -299,6 +302,7 @@ function help4_disk_usage_health_page($moduleLink, $vars)
         $html .= '<td>' . help4_disk_usage_e($row['next_step']) . '</td>';
         $html .= '<td>' . help4_disk_usage_server_action_form($moduleLink, $server->id, 'check_server', 'Check', 'health') . ' '
             . help4_disk_usage_server_action_form($moduleLink, $server->id, 'deploy_server', 'Deploy', 'health') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'update_server', 'Update', 'health') . ' '
             . help4_disk_usage_server_action_form($moduleLink, $server->id, 'sync_server', 'Sync', 'health') . '</td>';
         $html .= '</tr>';
     }
@@ -318,6 +322,7 @@ function help4_disk_usage_health_summary($moduleLink, $vars)
     $html .= '<div class="h4du-metrics compact">';
     $html .= help4_disk_usage_metric('Healthy', $counts['healthy']);
     $html .= help4_disk_usage_metric('Attention', $counts['attention']);
+    $html .= help4_disk_usage_metric('Updates', $counts['update_available']);
     $html .= help4_disk_usage_metric('Stale', $counts['stale']);
     $html .= help4_disk_usage_metric('Errors', $counts['error']);
     $html .= '</div>';
@@ -330,8 +335,8 @@ function help4_disk_usage_servers_page($moduleLink, $vars)
     $servers = help4_disk_usage_cpanel_servers();
 
     $html = '<h2>cPanel/WHM Servers</h2>';
-    $html .= '<p class="h4du-muted">Check verifies installed files. Deploy installs the plugin over SSH when PHP ssh2 and WHMCS server credentials are available. Sync runs a bounded scan and stores customer-facing summaries.</p>';
-    $html .= '<table class="datatable h4du-table"><thead><tr><th>Server</th><th>Host</th><th>Module</th><th>Status</th><th>Last Scan</th><th>Counts</th><th>Actions</th></tr></thead><tbody>';
+    $html .= '<p class="h4du-muted">Check verifies installed files and compares against the configured release tarball. Deploy installs the plugin over SSH. Update pulls the configured release when the installed version is behind. Sync runs a bounded scan and stores customer-facing summaries.</p>';
+    $html .= '<table class="datatable h4du-table"><thead><tr><th>Server</th><th>Host</th><th>Module</th><th>Status</th><th>Version</th><th>Last Scan</th><th>Counts</th><th>Actions</th></tr></thead><tbody>';
 
     foreach ($servers as $server) {
         $state = Capsule::table('mod_help4_disk_usage_servers')->where('whmcs_server_id', $server->id)->first();
@@ -340,10 +345,12 @@ function help4_disk_usage_servers_page($moduleLink, $vars)
         $html .= '<td>' . help4_disk_usage_e($server->hostname ?: $server->ipaddress) . '</td>';
         $html .= '<td>' . help4_disk_usage_e($server->type) . '</td>';
         $html .= '<td>' . help4_disk_usage_badge($state->status ?? 'unknown') . '</td>';
+        $html .= '<td>' . help4_disk_usage_version_summary($state) . '</td>';
         $html .= '<td>' . help4_disk_usage_e($state->last_scan_at ?? 'never') . '</td>';
         $html .= '<td>' . (int)($state->account_count ?? 0) . ' accounts<br>' . (int)($state->bad_count ?? 0) . ' bad / ' . (int)($state->check_count ?? 0) . ' check</td>';
         $html .= '<td>' . help4_disk_usage_server_action_form($moduleLink, $server->id, 'check_server', 'Check', 'servers') . ' '
             . help4_disk_usage_server_action_form($moduleLink, $server->id, 'deploy_server', 'Deploy', 'servers') . ' '
+            . help4_disk_usage_server_action_form($moduleLink, $server->id, 'update_server', 'Update', 'servers') . ' '
             . help4_disk_usage_server_action_form($moduleLink, $server->id, 'sync_server', 'Sync', 'servers') . '</td>';
         $html .= '</tr>';
     }
@@ -410,6 +417,9 @@ function help4_disk_usage_server_health($server, $state)
     if (($state->status ?? '') === 'error' || (string)($state->last_error ?? '') !== '') {
         return ['status' => 'error', 'next_step' => 'Review the last error, then run Check after fixing access or server state.', 'scan_age' => help4_disk_usage_age($state->last_scan_at ?? null), 'sort' => 10];
     }
+    if (($state->status ?? '') === 'update_available') {
+        return ['status' => 'update_available', 'next_step' => 'Run Update to pull the configured release tarball.', 'scan_age' => help4_disk_usage_age($state->last_scan_at ?? null), 'sort' => 25];
+    }
     if (!$state->last_scan_at) {
         return ['status' => 'not_synced', 'next_step' => 'Run Sync to collect the first server scan.', 'scan_age' => 'never', 'sort' => 40];
     }
@@ -426,7 +436,7 @@ function help4_disk_usage_server_health($server, $state)
 
 function help4_disk_usage_health_counts($rows)
 {
-    $counts = ['healthy' => 0, 'attention' => 0, 'stale' => 0, 'error' => 0, 'not_checked' => 0, 'not_synced' => 0, 'disabled' => 0];
+    $counts = ['healthy' => 0, 'attention' => 0, 'stale' => 0, 'error' => 0, 'not_checked' => 0, 'not_synced' => 0, 'update_available' => 0, 'disabled' => 0];
     foreach ($rows as $row) {
         $key = $row['health'];
         if (!isset($counts[$key])) {
@@ -454,6 +464,24 @@ function help4_disk_usage_age($datetime)
         return floor($seconds / 3600) . ' hours ago';
     }
     return floor($seconds / 86400) . ' days ago';
+}
+
+function help4_disk_usage_version_summary($state)
+{
+    if (!$state) {
+        return '<span class="h4du-muted">not checked</span>';
+    }
+    $summary = json_decode($state->raw_summary ?? '{}', true) ?: [];
+    $installed = $state->plugin_version ?: ($summary['installed_version'] ?? $summary['version'] ?? '');
+    $available = $summary['available_version'] ?? '';
+    $html = $installed ? 'Installed ' . help4_disk_usage_e($installed) : '<span class="h4du-muted">unknown</span>';
+    if ($available) {
+        $html .= '<br><span class="h4du-muted">Available ' . help4_disk_usage_e($available) . '</span>';
+    }
+    if (!empty($summary['release_url'])) {
+        $html .= '<br><span class="h4du-muted">repo configured</span>';
+    }
+    return $html;
 }
 
 function help4_disk_usage_accounts_page($moduleLink)
@@ -492,6 +520,11 @@ function help4_disk_usage_deploy_server($serverId, $vars)
     return help4_disk_usage_server_ssh_action($serverId, 'deploy', $vars);
 }
 
+function help4_disk_usage_update_server($serverId, $vars)
+{
+    return help4_disk_usage_server_ssh_action($serverId, 'update', $vars);
+}
+
 function help4_disk_usage_sync_server($serverId, $vars)
 {
     return help4_disk_usage_server_ssh_action($serverId, 'sync', $vars);
@@ -522,6 +555,30 @@ function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
         return ['status' => 'success', 'message' => 'Synced ' . $saved['accounts'] . ' account scan records from ' . ($server->name ?: $server->hostname) . '.'];
     }
 
+    if ($action === 'check') {
+        $check = help4_disk_usage_parse_update_json($result['output']);
+        $status = $check['status'] ?? 'installed';
+        help4_disk_usage_record_server_state($server, $status, [
+            'plugin_version' => (string)($check['installed_version'] ?? ''),
+            'raw_summary' => json_encode($check),
+        ], null);
+        $message = help4_disk_usage_check_message($server, $check);
+        help4_disk_usage_event($serverId, $action, 'success', $message, $result['output']);
+        return ['status' => 'success', 'message' => $message];
+    }
+
+    if ($action === 'update') {
+        $update = help4_disk_usage_parse_update_json($result['output']);
+        $status = (($update['status'] ?? '') === 'updated' || ($update['status'] ?? '') === 'current') ? 'installed' : ($update['status'] ?? 'installed');
+        help4_disk_usage_record_server_state($server, $status, [
+            'plugin_version' => (string)($update['installed_version'] ?? $update['available_version'] ?? ''),
+            'raw_summary' => json_encode($update),
+        ], null);
+        $message = help4_disk_usage_update_message($server, $update);
+        help4_disk_usage_event($serverId, $action, 'success', $message, $result['output']);
+        return ['status' => 'success', 'message' => $message];
+    }
+
     help4_disk_usage_record_server_state($server, 'installed', null, null);
     help4_disk_usage_event($serverId, $action, 'success', ucfirst($action) . ' completed.', $result['output']);
     return ['status' => 'success', 'message' => ucfirst($action) . ' completed for ' . ($server->name ?: $server->hostname) . '.'];
@@ -533,6 +590,10 @@ function help4_disk_usage_command_for_action($action, $vars)
         return help4_disk_usage_install_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL);
     }
 
+    if ($action === 'update') {
+        return help4_disk_usage_update_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL, true);
+    }
+
     if ($action === 'sync') {
         $limit = max(0, (int)($vars['syncAccountLimit'] ?? 0));
         $maxSeconds = max(15, (int)($vars['scanMaxSeconds'] ?? 90));
@@ -540,10 +601,7 @@ function help4_disk_usage_command_for_action($action, $vars)
         return '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --max-seconds ' . $maxSeconds . ' --top 25 --write-cache --lock-dir /var/cpanel/help4-disk-usage/locks' . $limitArg;
     }
 
-    return 'test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan && '
-        . 'test -x /usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/index.cgi && '
-        . 'test -x /usr/local/cpanel/base/frontend/jupiter/help4_disk_usage/index.live.pl && '
-        . 'echo help4_disk_usage_installed';
+    return help4_disk_usage_update_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL, false);
 }
 
 function help4_disk_usage_install_command($releaseUrl)
@@ -551,7 +609,71 @@ function help4_disk_usage_install_command($releaseUrl)
     $safeUrl = escapeshellarg($releaseUrl ?: H4DU_DEFAULT_RELEASE_URL);
     return 'set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; '
         . 'cd "$tmp"; curl -fsSL -o help4-disk-usage.tar.gz ' . $safeUrl . '; '
-        . 'tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; ./install.sh';
+        . 'tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; HELP4_DU_RELEASE_URL=' . $safeUrl . ' ./install.sh';
+}
+
+function help4_disk_usage_update_command($releaseUrl, $apply)
+{
+    $safeUrl = escapeshellarg($releaseUrl ?: H4DU_DEFAULT_RELEASE_URL);
+    $mode = $apply ? '--apply' : '--check';
+    $fallbackJson = escapeshellarg('{"ok":true,"status":"installed","installed_version":"","available_version":"","update_available":false}');
+    $fallback = $apply
+        ? help4_disk_usage_install_command($releaseUrl)
+        : 'test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan && '
+            . 'test -x /usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/index.cgi && '
+            . 'test -x /usr/local/cpanel/base/frontend/jupiter/help4_disk_usage/index.live.pl && '
+            . 'printf %s ' . $fallbackJson;
+    return 'set -euo pipefail; if test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update; then '
+        . '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update ' . $mode . ' --release-url ' . $safeUrl . '; '
+        . 'else '
+        . $fallback . '; '
+        . 'fi';
+}
+
+function help4_disk_usage_parse_update_json($output)
+{
+    $lines = preg_split('/\r?\n/', trim((string)$output));
+    $lines = array_reverse($lines ?: []);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] !== '{') {
+            continue;
+        }
+        $data = json_decode($line, true);
+        if (is_array($data)) {
+            return $data;
+        }
+    }
+    return ['ok' => true, 'status' => 'installed', 'installed_version' => '', 'available_version' => '', 'raw' => substr((string)$output, 0, 500)];
+}
+
+function help4_disk_usage_check_message($server, $check)
+{
+    $name = $server->name ?: $server->hostname;
+    $installed = $check['installed_version'] ?? 'unknown';
+    $available = $check['available_version'] ?? 'unknown';
+    if (($check['status'] ?? '') === 'update_available') {
+        return 'Update available for ' . $name . ': installed ' . $installed . ', available ' . $available . '.';
+    }
+    if (($check['status'] ?? '') === 'current') {
+        return $name . ' is current at version ' . $installed . '.';
+    }
+    if (($check['status'] ?? '') === 'not_installed') {
+        return $name . ' does not have Help4 Disk Usage installed. Use Deploy.';
+    }
+    return 'Check completed for ' . $name . '.';
+}
+
+function help4_disk_usage_update_message($server, $update)
+{
+    $name = $server->name ?: $server->hostname;
+    if (($update['status'] ?? '') === 'updated') {
+        return 'Updated ' . $name . ' to version ' . ($update['installed_version'] ?? 'unknown') . '.';
+    }
+    if (($update['status'] ?? '') === 'current') {
+        return $name . ' is already current at version ' . ($update['installed_version'] ?? 'unknown') . '.';
+    }
+    return 'Update command completed for ' . $name . ' with status ' . ($update['status'] ?? 'unknown') . '.';
 }
 
 function help4_disk_usage_ssh_exec($server, $command, $defaultPort)
@@ -644,6 +766,7 @@ function help4_disk_usage_save_scan_json($server, $json)
 
     help4_disk_usage_record_server_state($server, 'synced', [
         'last_scan_at' => help4_disk_usage_mysql_datetime($data['generated_at'] ?? null),
+        'plugin_version' => (string)($data['version'] ?? ''),
         'account_count' => $saved,
         'bad_count' => $bad,
         'check_count' => $check,
@@ -874,6 +997,6 @@ function help4_disk_usage_admin_css()
     .h4du-metrics div{border:1px solid #d9dee7;background:#fff;border-radius:4px;padding:12px}.h4du-metrics strong{display:block;font-size:22px}.h4du-metrics span{color:#687386}
     .h4du-table td,.h4du-table th{vertical-align:top}.h4du-inline{display:inline-block;margin:0 2px 4px 0}.h4du-pre{white-space:pre-wrap;background:#f6f7f9;border:1px solid #d9dee7;padding:12px;border-radius:4px}
     .h4du-badge{display:inline-block;padding:3px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;background:#e8ebf0}.h4du-good,.h4du-installed,.h4du-synced,.h4du-success,.h4du-healthy{background:#dff8e8;color:#075e2a}
-    .h4du-check,.h4du-attention,.h4du-stale,.h4du-not_synced,.h4du-not_checked{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-disabled{background:#e8ebf0;color:#687386}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}
+    .h4du-check,.h4du-attention,.h4du-stale,.h4du-not_synced,.h4du-not_checked,.h4du-update_available{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-disabled{background:#e8ebf0;color:#687386}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}
     </style>';
 }

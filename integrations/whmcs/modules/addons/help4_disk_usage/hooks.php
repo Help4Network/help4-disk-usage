@@ -40,6 +40,7 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
                     'error' => 0,
                     'not_checked' => 0,
                     'not_synced' => 0,
+                    'update_available' => 0,
                     'disabled' => 0,
                 ];
 
@@ -83,6 +84,7 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
             $html = '<div class="row text-center" style="margin-bottom:10px">';
             $html .= $this->metric('Healthy', $counts['healthy'], 'success');
             $html .= $this->metric('Attention', $counts['attention'], 'warning');
+            $html .= $this->metric('Updates', $counts['update_available'], 'warning');
             $html .= $this->metric('Stale', $counts['stale'], 'warning');
             $html .= $this->metric('Errors', $counts['error'], 'danger');
             $html .= '</div>';
@@ -119,6 +121,9 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
             }
             if (($state->status ?? '') === 'error' || (string)($state->last_error ?? '') !== '') {
                 return ['status' => 'error', 'next_step' => 'Review the last error, then run Check.', 'scan_age' => $this->age($state->last_scan_at ?? null), 'sort' => 10];
+            }
+            if (($state->status ?? '') === 'update_available') {
+                return ['status' => 'update_available', 'next_step' => 'Run Update to pull the configured release.', 'scan_age' => $this->age($state->last_scan_at ?? null), 'sort' => 25];
             }
             if (!$state->last_scan_at) {
                 return ['status' => 'not_synced', 'next_step' => 'Run Sync to collect the first scan.', 'scan_age' => 'never', 'sort' => 40];
@@ -165,6 +170,7 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
                 'attention' => 'warning',
                 'stale' => 'warning',
                 'error' => 'danger',
+                'update_available' => 'warning',
                 'not_checked' => 'default',
                 'not_synced' => 'default',
                 'disabled' => 'default',

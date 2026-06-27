@@ -19,7 +19,7 @@ Then activate **Help4 Disk Usage** in **System Settings > Addon Modules**.
 - Admin dashboard for disk/inode scan state across cPanel servers.
 - WHMCS admin-home widget with health counts and prioritized cPanel server rows.
 - Server Health tab for WHMCS admins and support leads.
-- Server deployment/check/sync controls.
+- Server deployment/check/update/sync controls.
 - Manual deployment command for hosts without PHP `ssh2`.
 - Customer report table mapped to WHMCS services.
 - Client-area page at `index.php?m=help4_disk_usage`.
@@ -46,7 +46,7 @@ The health view is for WHMCS administrators. Customer-facing output remains scop
 
 ## One-Click Deploy Requirements
 
-One-click deploy/check/sync uses SSH from WHMCS to the cPanel server.
+One-click deploy/check/update/sync uses SSH from WHMCS to the cPanel server.
 
 Required:
 
@@ -56,6 +56,14 @@ Required:
 - Root or sufficiently privileged account on the cPanel server.
 
 If any of these are missing, use the manual deployment command shown by the addon.
+
+## Updates from Repo or Release Tarball
+
+WHMCS **Check** asks the cPanel server to run `help4-disk-usage-update --check` when the updater is installed. It stores installed and available versions in the WHMCS server health row.
+
+WHMCS **Update** asks the cPanel server to run `help4-disk-usage-update --apply`. Older installs that do not have the updater yet fall back to the normal backup-first installer command. The release tarball URL comes from the addon setting **Release Tarball URL**.
+
+For production release management, set **Release Tarball URL** to an immutable GitHub Release asset. For live development, it can point at the public `main.tar.gz` archive.
 
 ## Data Mapping
 
@@ -92,7 +100,7 @@ Deactivation retains the tables so support history is preserved.
 
 - WHMCS does not delete files.
 - WHMCS does not show unmapped account data to clients.
-- Deploy/check/sync actions are limited to cPanel/WHM-like WHMCS server records.
+- Deploy/check/update/sync actions are limited to cPanel/WHM-like WHMCS server records.
 - Disabled WHMCS server records are rejected before SSH actions run.
 - Client reports use summarized findings and remediation hints.
 - Admins should review server credentials and SSH trust boundaries before enabling one-click deployment.

@@ -45,6 +45,7 @@ https://fixitphill.com/whm-cpanel/help4-disk-usage-cpanel-whm-whmcs-disk-inode-r
 - Customer-safe remediation hints.
 - One-scan-at-a-time lock for foreground/cache-writing scans.
 - WHM-editable cPanel refresh limits with package-specific overrides.
+- Backup-first update checks from WHM and WHMCS using the configured release tarball.
 - Permissive MIT licensing with visible Help4 credit.
 
 ## Customer-Facing Copy

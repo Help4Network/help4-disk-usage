@@ -26,6 +26,7 @@ Help4 Disk Usage is designed around background scans, bounded runtime, visible t
 
 ```text
 src/bin/help4-disk-usage-scan                         Scanner and JSON cache writer
+src/bin/help4-disk-usage-update                       Backup-first release checker/updater
 src/whm/index.cgi                                     WHM root/reseller dashboard
 src/cpanel/index.live.pl                              cPanel account page
 src/static/                                           Shared UI assets
@@ -55,6 +56,7 @@ uninstall.sh                                          cPanel/WHM uninstaller
 - Visible `scanned_at` timestamps and scan completeness.
 - Root-editable scan limits for WHM and cPanel refreshes.
 - Shared foreground scan lock so GUI refreshes do not stack.
+- Root update panel for checking/applying configured repository or release tarball updates.
 
 ### cPanel
 
@@ -73,7 +75,7 @@ uninstall.sh                                          cPanel/WHM uninstaller
 - WHMCS admin-home widget with health counts and prioritized server rows.
 - Admin **Server Health** view across WHMCS cPanel server records.
 - cPanel server list from WHMCS `tblservers`.
-- Deployment/check/sync actions for cPanel servers.
+- Deployment/check/update/sync actions for cPanel servers.
 - Health states for missing, stale, erroring, disabled, attention-needed, and healthy servers.
 - Manual deployment command when one-click SSH deploy is unavailable.
 - Per-account scan data mapped to `tblhosting` by server ID and cPanel username.
@@ -128,8 +130,8 @@ The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packag
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.5.tar.gz
-cd help4-disk-usage-0.2.5
+tar -xzf help4-disk-usage-0.2.6.tar.gz
+cd help4-disk-usage-0.2.6
 sudo ./install.sh
 ```
 
@@ -144,6 +146,31 @@ The installer:
 7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
 8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits.
 9. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
+10. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version and release URL.
+
+## Updates
+
+Installed cPanel servers include:
+
+```text
+/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update
+```
+
+The updater downloads the configured release tarball, reads the available scanner version, compares it with the installed scanner version, and only runs the normal installer when an update is available or `--force` is used. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
+
+Manual check:
+
+```bash
+sudo /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --check
+```
+
+Manual update:
+
+```bash
+sudo /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --apply
+```
+
+WHM root users can use **Help4 Disk Usage > Repository Updates** to check or apply the configured release. The release URL is stored in `/var/cpanel/help4-disk-usage/config.json` and defaults to the public GitHub `main.tar.gz` archive. For production, point it at an immutable GitHub Release tarball.
 
 ## Uninstall from a cPanel Server
 
@@ -210,8 +237,9 @@ Open **Addons > Help4 Disk Usage > Servers & Deploy** for the install/sync workf
 
 For each cPanel server, WHMCS provides:
 
-- **Check**: verifies expected plugin files exist.
+- **Check**: verifies expected plugin files exist and compares installed/available versions from the configured release tarball.
 - **Deploy**: downloads the configured release tarball on the cPanel server and runs `install.sh`.
+- **Update**: runs the cPanel-side updater when present, or falls back to the backup-first installer for older installs.
 - **Sync**: runs a bounded scanner command and imports JSON summaries into WHMCS.
 
 One-click actions require:
@@ -322,7 +350,8 @@ cPanel user throttle state is stored under the account's own `.cpanel/help4-disk
 - cPanel user refreshes are throttled by account and can be package-specific.
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
-- WHMCS deploy/check/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
+- WHMCS deploy/check/update/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
+- WHMCS update actions use the configured release tarball URL and the cPanel-side backup-first installer/updater.
 - WHMCS strips absolute scanner paths before storing support summary lists.
 - WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
 - JSON cache files should not be made web-accessible.
@@ -341,6 +370,7 @@ Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 - visible timestamps
 - top-N offender lists
 - WHMCS sync limits for staged rollout
+- backup-first update checks before repo/release pulls
 
 ## Screenshots
 

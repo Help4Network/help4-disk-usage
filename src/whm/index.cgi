@@ -9,11 +9,13 @@ use POSIX qw(strftime);
 my $APP = 'Help4 Disk Usage';
 my $CACHE_DIR = $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
+my $UPDATER = $ENV{HELP4_DU_UPDATER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update';
 my $CONFIG_FILE = $ENV{HELP4_DU_CONFIG} || File::Spec->catfile($CACHE_DIR, 'config.json');
 my %q = parse_query($ENV{QUERY_STRING} || '');
 my $auth_user = $ENV{REMOTE_USER} || $ENV{USER} || '';
 $auth_user =~ s/[^A-Za-z0-9_.-]//g;
 my $config = load_config();
+my $update_status;
 
 my $notice = '';
 my $is_root = $auth_user eq 'root' || $> == 0 && !$auth_user;
@@ -23,6 +25,21 @@ $owned{$auth_user} = 1 if $auth_user && !$is_root;
 if ($q{save_settings} && $is_root) {
     $notice = save_settings(\%q, $config);
     $config = load_config();
+}
+
+if ($q{update_check} && $is_root) {
+    $update_status = run_update('check', $config);
+}
+
+if ($q{update_apply} && $is_root) {
+    $update_status = run_update('apply', $config);
+    if ($update_status->{ok} && ($update_status->{status} || '') eq 'updated') {
+        $notice = 'Update applied to version ' . ($update_status->{installed_version} || 'unknown') . '. Backup: ' . ($update_status->{backup} || 'see install output');
+    } elsif ($update_status->{ok}) {
+        $notice = 'Update check completed: ' . ($update_status->{status} || 'unknown') . '.';
+    } else {
+        $notice = 'Update failed: ' . ($update_status->{error} || 'unknown error');
+    }
 }
 
 if ($q{refresh}) {
@@ -54,10 +71,10 @@ my @accounts = grep { allowed($_, $is_root, \%owned) } read_account_caches();
 } @accounts;
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
-print page(\@accounts, $notice, $auth_user, $is_root, $config);
+print page(\@accounts, $notice, $auth_user, $is_root, $config, $update_status);
 
 sub page {
-    my ($accounts, $notice, $auth_user, $is_root, $config) = @_;
+    my ($accounts, $notice, $auth_user, $is_root, $config, $update_status) = @_;
     my $total_bytes = 0;
     my $total_inodes = 0;
     my %sev;
@@ -72,6 +89,7 @@ sub page {
     my $refresh_all = $is_root ? '<a class="button" href="?refresh=1">Refresh all accounts</a>' : '<a class="button" href="?refresh=1">Refresh owned accounts</a>';
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
     my $settings = $is_root ? settings_panel($config) : '';
+    my $updates = $is_root ? update_panel($config, $update_status) : '';
     return <<"HTML";
 <!doctype html>
 <html>
@@ -109,6 +127,7 @@ sub page {
       </table>
     </section>
     $settings
+    $updates
     <footer class="credit">Help4 Disk Usage by Help4 Network</footer>
   </main>
 </body>
@@ -128,11 +147,39 @@ sub settings_panel {
         <label>cPanel refreshes per hour<input name="cpanel_refreshes_per_hour" value="@{[h($cfg->{cpanel_refreshes_per_hour})]}"></label>
         <label>cPanel min interval seconds<input name="cpanel_min_interval_seconds" value="@{[h($cfg->{cpanel_min_interval_seconds})]}"></label>
         <label>cPanel scan max seconds<input name="cpanel_scan_max_seconds" value="@{[h($cfg->{cpanel_scan_max_seconds})]}"></label>
+        <label class="wide">Release tarball URL<input name="release_url" value="@{[h($cfg->{release_url})]}"></label>
         <label class="wide">Shared scan lock directory<input name="scan_lock_dir" value="@{[h($cfg->{scan_lock_dir})]}"></label>
         <label class="wide">Package overrides JSON<textarea name="package_overrides_json" rows="8">@{[h($overrides)]}</textarea></label>
         <div class="wide"><button class="button" type="submit">Save limits</button></div>
       </form>
       <p class="muted">All foreground scans use the shared lock, so only one scan runs at a time. cPanel user refreshes are also throttled by account and can be overridden by package name.</p>
+    </section>
+HTML
+}
+
+sub update_panel {
+    my ($cfg, $status) = @_;
+    my $current = current_version();
+    my $status_html = '<p class="muted">Click check to compare this server with the configured release tarball.</p>';
+    if ($status) {
+        my $badge = $status->{status} || 'unknown';
+        my $err = $status->{error} ? '<br>Error: ' . h($status->{error}) : '';
+        my $backup = $status->{backup} ? '<br>Backup: ' . h($status->{backup}) : '';
+        $status_html = '<p><strong>Status:</strong> <span class="pill ' . h($badge) . '">' . h($badge) . '</span>'
+            . '<br>Installed: ' . h($status->{installed_version} || $current || 'unknown')
+            . '<br>Available: ' . h($status->{available_version} || 'unknown')
+            . '<br>Source: ' . h($status->{release_url} || $cfg->{release_url} || '')
+            . $err . $backup . '</p>';
+    }
+    return <<"HTML";
+    <section>
+      <h2>Repository Updates</h2>
+      $status_html
+      <p class="muted">Updates download the configured release tarball, compare versions, run the normal backup-first installer, and preserve scan cache/config. Use this after pushing a new release or changing the release URL.</p>
+      <p>
+        <a class="button" href="?update_check=1">Check for update</a>
+        <a class="button" href="?update_apply=1">Apply update</a>
+      </p>
     </section>
 HTML
 }
@@ -192,6 +239,7 @@ sub read_account_caches {
 sub default_config {
     return {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz',
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
         cpanel_min_interval_seconds   => 300,
@@ -209,6 +257,7 @@ sub load_config {
         }
     }
     $cfg->{scan_lock_dir} ||= File::Spec->catdir($CACHE_DIR, 'locks');
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
     $cfg->{cpanel_min_interval_seconds} = bounded_int($cfg->{cpanel_min_interval_seconds}, 0, 3600, 300);
@@ -221,6 +270,7 @@ sub save_settings {
     my ($q, $current) = @_;
     my $cfg = {
         scan_lock_dir                 => clean_abs_path($q->{scan_lock_dir}) || $current->{scan_lock_dir},
+        release_url                   => clean_url($q->{release_url}) || $current->{release_url},
         whm_scan_max_seconds          => bounded_int($q->{whm_scan_max_seconds}, 10, 1800, $current->{whm_scan_max_seconds}),
         cpanel_refreshes_per_hour     => bounded_int($q->{cpanel_refreshes_per_hour}, 1, 24, $current->{cpanel_refreshes_per_hour}),
         cpanel_min_interval_seconds   => bounded_int($q->{cpanel_min_interval_seconds}, 0, 3600, $current->{cpanel_min_interval_seconds}),
@@ -280,6 +330,40 @@ sub clean_abs_path {
     return '' unless defined $path && $path =~ m{\A/[A-Za-z0-9_./-]+\z};
     $path =~ s{/+}{/}g;
     return $path;
+}
+
+sub clean_url {
+    my ($url) = @_;
+    return '' unless defined $url;
+    $url =~ s/^\s+|\s+\z//g;
+    return $url if $url =~ m{\Ahttps?://[A-Za-z0-9._~:/?#\[\]\@!$&'()*+,;=%-]+\z};
+    return '';
+}
+
+sub current_version {
+    return '' unless -x $SCANNER;
+    open my $fh, '-|', $SCANNER, '--help' or return '';
+    while (defined(my $line = <$fh>)) {
+        if ($line =~ /\AHelp4 Disk Usage scanner v(.+)\s*\z/) {
+            close $fh;
+            return $1;
+        }
+    }
+    close $fh;
+    return '';
+}
+
+sub run_update {
+    my ($mode, $cfg) = @_;
+    return { ok => 0, status => 'error', error => 'Updater binary is not installed yet. Reinstall this release once to enable updates.' } unless -x $UPDATER;
+    my @cmd = ($UPDATER, $mode eq 'apply' ? '--apply' : '--check', '--release-url', $cfg->{release_url});
+    open my $fh, '-|', @cmd or return { ok => 0, status => 'error', error => 'Unable to start updater.' };
+    local $/;
+    my $json = <$fh>;
+    close $fh;
+    my $data = eval { decode_json($json) };
+    return $data if $data && ref $data eq 'HASH';
+    return { ok => 0, status => 'error', error => 'Updater returned invalid output.' };
 }
 
 sub bounded_int {

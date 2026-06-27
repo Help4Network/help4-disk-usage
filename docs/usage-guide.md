@@ -26,7 +26,8 @@ Use that article when you need a plain-language explanation for hosting teams, s
 5. Sync to WHMCS when support staff need service/customer mapping.
 6. Use the WHMCS admin-home health widget for quick status, then open the Server Health tab for stale scans, scan errors, bad/check counts, and server coverage.
 7. Send customers to the WHMCS client report or cPanel account page when self-service reporting is appropriate.
-8. Use remediation hints as discussion points, not as automatic cleanup instructions.
+8. Use WHM or WHMCS update checks after publishing a new release tarball or repo archive.
+9. Use remediation hints as discussion points, not as automatic cleanup instructions.
 
 ## Safety Notes for Tutorial Writers
 
@@ -39,6 +40,7 @@ Use that article when you need a plain-language explanation for hosting teams, s
 - Mention that root can tune scan limits and package-specific overrides in WHM.
 - Mention that WHMCS admins get an admin-home health widget for quick checks.
 - Mention that WHMCS Server Health is the admin/support view for server coverage, scan freshness, and failures.
+- Mention that updates are backup-first and should use immutable release tarballs for production.
 - Mention that WHMCS client rows are scoped to the logged-in client's current mapped hosting services.
 
 ## Version Note

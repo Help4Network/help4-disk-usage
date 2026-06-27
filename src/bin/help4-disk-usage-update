@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz"
+APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
+CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
+CONFIG_FILE="${HELP4_DU_CONFIG:-$CACHE_DIR/config.json}"
+INSTALL_META="$CACHE_DIR/install.json"
+SCANNER="$APP_DIR/bin/help4-disk-usage-scan"
+
+MODE="check"
+FORCE=0
+RELEASE_URL="${HELP4_DU_RELEASE_URL:-}"
+
+usage() {
+  cat <<USAGE
+Help4 Disk Usage updater
+
+Usage:
+  help4-disk-usage-update --check [--release-url URL]
+  help4-disk-usage-update --apply [--release-url URL] [--force]
+
+Output is JSON so WHM and WHMCS can report installed/available versions.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check) MODE="check" ;;
+    --apply) MODE="apply" ;;
+    --force) FORCE=1 ;;
+    --release-url)
+      shift
+      RELEASE_URL="${1:-}"
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 64
+      ;;
+  esac
+  shift
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo '{"ok":false,"status":"error","error":"updater must run as root"}'
+  exit 1
+fi
+
+if [ -z "$RELEASE_URL" ] && [ -f "$INSTALL_META" ]; then
+  RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$INSTALL_META")"
+fi
+if [ -z "$RELEASE_URL" ] && [ -f "$CONFIG_FILE" ]; then
+  RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$CONFIG_FILE")"
+fi
+RELEASE_URL="${RELEASE_URL:-$DEFAULT_RELEASE_URL}"
+
+case "$RELEASE_URL" in
+  https://*|http://*) ;;
+  *)
+    perl -MJSON::PP -e 'print encode_json({ok=>JSON::PP::false,status=>"error",error=>"release_url must be http or https"}), "\n"'
+    exit 2
+    ;;
+esac
+
+json_string() {
+  JSON_VALUE="${1:-}" perl -MJSON::PP -e 'print encode_json($ENV{JSON_VALUE} // "")'
+}
+
+json_response() {
+  local ok="$1" status="$2" current="$3" available="$4" error="$5" backup="${6:-}" changed="${7:-false}"
+  OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" \
+    UPDATE_AVAILABLE="$([ "$status" = "update_available" ] && echo true || echo false)" \
+    CHANGED="$changed" ERROR="$error" BACKUP="$backup" \
+    perl -MJSON::PP -e '
+    my $bool = sub { $_[0] eq "true" ? JSON::PP::true : JSON::PP::false };
+    my %out = (
+      ok => $bool->($ENV{OK}),
+      status => $ENV{STATUS},
+      installed_version => $ENV{CURRENT},
+      available_version => $ENV{AVAILABLE},
+      release_url => $ENV{RELEASE_URL},
+      update_available => $bool->($ENV{UPDATE_AVAILABLE}),
+      changed => $bool->($ENV{CHANGED}),
+    );
+    $out{error} = $ENV{ERROR} if length $ENV{ERROR};
+    $out{backup} = $ENV{BACKUP} if length $ENV{BACKUP};
+    print encode_json(\%out), "\n";
+  '
+}
+
+installed_version() {
+  if [ -x "$SCANNER" ]; then
+    "$SCANNER" --help 2>/dev/null | sed -n 's/^Help4 Disk Usage scanner v//p' | head -n 1
+  fi
+}
+
+version_compare() {
+  perl -e '
+    sub parts { map { /^\d+$/ ? int($_) : $_ } split /[._-]/, shift }
+    my @a = parts($ARGV[0] // "");
+    my @b = parts($ARGV[1] // "");
+    my $n = @a > @b ? @a : @b;
+    for my $i (0 .. $n - 1) {
+      my $x = $a[$i] // 0;
+      my $y = $b[$i] // 0;
+      if ($x =~ /^\d+$/ && $y =~ /^\d+$/) {
+        print -1 and exit if $x < $y;
+        print 1 and exit if $x > $y;
+      } else {
+        print -1 and exit if "$x" lt "$y";
+        print 1 and exit if "$x" gt "$y";
+      }
+    }
+    print 0;
+  ' "$1" "$2"
+}
+
+TMP="$(mktemp -d /root/help4-disk-usage-update.XXXXXX)"
+cleanup() {
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+
+ARCHIVE="$TMP/help4-disk-usage.tar.gz"
+if ! curl -fsSL --connect-timeout 15 --max-time 120 -o "$ARCHIVE" "$RELEASE_URL"; then
+  json_response false error "$(installed_version)" "" "unable to download release tarball"
+  exit 3
+fi
+if ! tar -xzf "$ARCHIVE" -C "$TMP"; then
+  json_response false error "$(installed_version)" "" "unable to extract release tarball"
+  exit 4
+fi
+
+SRC_DIR="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/src/bin/help4-disk-usage-scan" ] || [ ! -x "$SRC_DIR/install.sh" ]; then
+  json_response false error "$(installed_version)" "" "release tarball does not look like Help4 Disk Usage"
+  exit 5
+fi
+
+CURRENT="$(installed_version)"
+AVAILABLE="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$SRC_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
+if [ -z "$AVAILABLE" ]; then
+  json_response false error "$CURRENT" "" "unable to determine available version"
+  exit 6
+fi
+
+if [ -z "$CURRENT" ]; then
+  STATUS="not_installed"
+elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ]; then
+  STATUS="update_available"
+else
+  STATUS="current"
+fi
+
+if [ "$MODE" = "check" ]; then
+  json_response true "$STATUS" "$CURRENT" "$AVAILABLE" ""
+  exit 0
+fi
+
+if [ "$STATUS" = "current" ] && [ "$FORCE" -ne 1 ]; then
+  json_response true current "$CURRENT" "$AVAILABLE" ""
+  exit 0
+fi
+
+HELP4_DU_RELEASE_URL="$RELEASE_URL" "$SRC_DIR/install.sh" >/tmp/help4-disk-usage-update-install.log 2>&1 || {
+  err="$(tail -n 20 /tmp/help4-disk-usage-update-install.log | tr '\n' ' ' | cut -c1-500)"
+  json_response false error "$CURRENT" "$AVAILABLE" "install failed: $err"
+  exit 7
+}
+
+NEW_CURRENT="$(installed_version)"
+BACKUP="$(sed -n 's/^Backup\/snapshot: //p' /tmp/help4-disk-usage-update-install.log | tail -n 1)"
+json_response true updated "$NEW_CURRENT" "$AVAILABLE" "" "$BACKUP" true
