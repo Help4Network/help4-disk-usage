@@ -209,3 +209,9 @@ tr:last-child td {
   font-size: 12px;
   text-align: right;
 }
+
+.credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

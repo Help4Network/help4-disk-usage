@@ -6,8 +6,9 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.8';
+const H4DU_VERSION = '0.2.9';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
+const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 
 function help4_disk_usage_config()
 {
@@ -24,6 +25,13 @@ function help4_disk_usage_config()
                 'Size' => '90',
                 'Default' => H4DU_DEFAULT_RELEASE_URL,
                 'Description' => 'URL WHMCS will ask cPanel servers to download during SSH deployment.',
+            ],
+            'updateManifestUrl' => [
+                'FriendlyName' => 'Update Manifest URL',
+                'Type' => 'text',
+                'Size' => '90',
+                'Default' => H4DU_DEFAULT_UPDATE_MANIFEST_URL,
+                'Description' => 'JSON manifest used by Check/Update. It should publish version, package_url, and optional release_notes_url.',
             ],
             'sshPort' => [
                 'FriendlyName' => 'Default SSH Port',
@@ -50,11 +58,18 @@ function help4_disk_usage_config()
                 'Description' => 'Show latest disk/inode scan summaries to logged-in clients for their own services.',
                 'Default' => 'on',
             ],
-            'creditText' => [
-                'FriendlyName' => 'Footer Credit',
+            'displayName' => [
+                'FriendlyName' => 'Display Name',
                 'Type' => 'text',
                 'Size' => '90',
-                'Default' => 'Help4 Disk Usage by Help4 Network',
+                'Default' => 'Disk Usage Audit',
+            ],
+            'creditPrefix' => [
+                'FriendlyName' => 'Footer Credit Prefix',
+                'Type' => 'text',
+                'Size' => '40',
+                'Default' => 'Built by',
+                'Description' => 'Prefix text before the required Help4 Network builder credit link.',
             ],
         ],
     ];
@@ -173,7 +188,7 @@ function help4_disk_usage_output($vars)
 
     echo help4_disk_usage_admin_css();
     echo '<div class="h4du-wrap">';
-    echo '<h1>Help4 Disk Usage</h1>';
+    echo '<h1>' . help4_disk_usage_e(help4_disk_usage_display_name($vars)) . '</h1>';
     echo '<p class="h4du-muted">WHMCS deployment and support reporting for cPanel/WHM disk and inode scans.</p>';
     echo help4_disk_usage_tabs($moduleLink, $view);
     if ($message) {
@@ -192,7 +207,7 @@ function help4_disk_usage_output($vars)
         echo help4_disk_usage_dashboard_page($moduleLink, $vars);
     }
 
-    echo '<div class="h4du-credit">' . help4_disk_usage_e($vars['creditText'] ?: 'Help4 Disk Usage by Help4 Network') . '</div>';
+    echo help4_disk_usage_credit_html($vars);
     echo '</div>';
 }
 
@@ -204,7 +219,7 @@ function help4_disk_usage_clientarea($vars)
             'breadcrumb' => ['index.php?m=help4_disk_usage' => 'Help4 Disk Usage'],
             'templatefile' => 'clientarea',
             'requirelogin' => true,
-            'vars' => ['accounts' => [], 'disabled' => true, 'creditText' => $vars['creditText'] ?? 'Help4 Disk Usage by Help4 Network'],
+            'vars' => ['accounts' => [], 'disabled' => true, 'displayName' => help4_disk_usage_display_name($vars), 'creditPrefix' => help4_disk_usage_credit_prefix($vars)],
         ];
     }
 
@@ -240,7 +255,8 @@ function help4_disk_usage_clientarea($vars)
         'vars' => [
             'accounts' => $accountRows,
             'disabled' => false,
-            'creditText' => $vars['creditText'] ?? 'Help4 Disk Usage by Help4 Network',
+            'displayName' => help4_disk_usage_display_name($vars),
+            'creditPrefix' => help4_disk_usage_credit_prefix($vars),
         ],
     ];
 }
@@ -357,7 +373,7 @@ function help4_disk_usage_servers_page($moduleLink, $vars)
 
     $html .= '</tbody></table>';
     $html .= '<h3>Manual Deployment Command</h3>';
-    $html .= '<pre class="h4du-pre">' . help4_disk_usage_e(help4_disk_usage_install_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL)) . '</pre>';
+    $html .= '<pre class="h4du-pre">' . help4_disk_usage_e(help4_disk_usage_install_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL, $vars['updateManifestUrl'] ?? H4DU_DEFAULT_UPDATE_MANIFEST_URL)) . '</pre>';
     return $html;
 }
 
@@ -586,12 +602,14 @@ function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
 
 function help4_disk_usage_command_for_action($action, $vars)
 {
+    $releaseUrl = $vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL;
+    $manifestUrl = $vars['updateManifestUrl'] ?? H4DU_DEFAULT_UPDATE_MANIFEST_URL;
     if ($action === 'deploy') {
-        return help4_disk_usage_install_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL);
+        return help4_disk_usage_install_command($releaseUrl, $manifestUrl);
     }
 
     if ($action === 'update') {
-        return help4_disk_usage_update_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL, true);
+        return help4_disk_usage_update_command($releaseUrl, $manifestUrl, true);
     }
 
     if ($action === 'sync') {
@@ -601,30 +619,32 @@ function help4_disk_usage_command_for_action($action, $vars)
         return '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --max-seconds ' . $maxSeconds . ' --top 25 --write-cache --lock-dir /var/cpanel/help4-disk-usage/locks' . $limitArg;
     }
 
-    return help4_disk_usage_update_command($vars['releaseUrl'] ?? H4DU_DEFAULT_RELEASE_URL, false);
+    return help4_disk_usage_update_command($releaseUrl, $manifestUrl, false);
 }
 
-function help4_disk_usage_install_command($releaseUrl)
+function help4_disk_usage_install_command($releaseUrl, $manifestUrl = H4DU_DEFAULT_UPDATE_MANIFEST_URL)
 {
     $safeUrl = escapeshellarg($releaseUrl ?: H4DU_DEFAULT_RELEASE_URL);
+    $safeManifestUrl = escapeshellarg($manifestUrl ?: H4DU_DEFAULT_UPDATE_MANIFEST_URL);
     return 'set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; '
         . 'cd "$tmp"; curl -fsSL -o help4-disk-usage.tar.gz ' . $safeUrl . '; '
-        . 'tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; HELP4_DU_RELEASE_URL=' . $safeUrl . ' ./install.sh';
+        . 'tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; HELP4_DU_RELEASE_URL=' . $safeUrl . ' HELP4_DU_UPDATE_MANIFEST_URL=' . $safeManifestUrl . ' ./install.sh';
 }
 
-function help4_disk_usage_update_command($releaseUrl, $apply)
+function help4_disk_usage_update_command($releaseUrl, $manifestUrl, $apply)
 {
     $safeUrl = escapeshellarg($releaseUrl ?: H4DU_DEFAULT_RELEASE_URL);
+    $safeManifestUrl = escapeshellarg($manifestUrl ?: H4DU_DEFAULT_UPDATE_MANIFEST_URL);
     $mode = $apply ? '--apply' : '--check';
     $fallbackJson = escapeshellarg('{"ok":true,"status":"installed","installed_version":"","available_version":"","update_available":false}');
     $fallback = $apply
-        ? help4_disk_usage_install_command($releaseUrl)
+        ? help4_disk_usage_install_command($releaseUrl, $manifestUrl)
         : 'test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan && '
             . 'test -x /usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/index.cgi && '
             . 'test -x /usr/local/cpanel/base/frontend/jupiter/help4_disk_usage/index.live.pl && '
             . 'printf %s ' . $fallbackJson;
     return 'set -euo pipefail; if test -x /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update; then '
-        . '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update ' . $mode . ' --release-url ' . $safeUrl . '; '
+        . '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update ' . $mode . ' --manifest-url ' . $safeManifestUrl . ' --release-url ' . $safeUrl . '; '
         . 'else '
         . $fallback . '; '
         . 'fi';
@@ -973,6 +993,33 @@ function help4_disk_usage_mysql_datetime($value)
     return $ts ? date('Y-m-d H:i:s', $ts) : null;
 }
 
+function help4_disk_usage_display_name($vars)
+{
+    return help4_disk_usage_clean_label($vars['displayName'] ?? 'Disk Usage Audit', 'Disk Usage Audit', 80);
+}
+
+function help4_disk_usage_credit_prefix($vars)
+{
+    return help4_disk_usage_clean_label($vars['creditPrefix'] ?? 'Built by', 'Built by', 40);
+}
+
+function help4_disk_usage_credit_html($vars)
+{
+    return '<div class="h4du-credit">' . help4_disk_usage_e(help4_disk_usage_credit_prefix($vars))
+        . ' <a href="https://help4network.com/" target="_blank" rel="noopener">Help4 Network</a></div>';
+}
+
+function help4_disk_usage_clean_label($value, $default, $maxLength)
+{
+    $value = trim((string)$value);
+    $value = preg_replace('/[\r\n\t ]+/', ' ', $value);
+    $value = preg_replace('/[^A-Za-z0-9_ .:()\/+-]/', '', $value);
+    if ($value === '') {
+        $value = $default;
+    }
+    return substr($value, 0, $maxLength);
+}
+
 function help4_disk_usage_bytes($bytes)
 {
     $units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
@@ -997,6 +1044,6 @@ function help4_disk_usage_admin_css()
     .h4du-metrics div{border:1px solid #d9dee7;background:#fff;border-radius:4px;padding:12px}.h4du-metrics strong{display:block;font-size:22px}.h4du-metrics span{color:#687386}
     .h4du-table td,.h4du-table th{vertical-align:top}.h4du-inline{display:inline-block;margin:0 2px 4px 0}.h4du-pre{white-space:pre-wrap;background:#f6f7f9;border:1px solid #d9dee7;padding:12px;border-radius:4px}
     .h4du-badge{display:inline-block;padding:3px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;background:#e8ebf0}.h4du-good,.h4du-installed,.h4du-synced,.h4du-success,.h4du-healthy{background:#dff8e8;color:#075e2a}
-    .h4du-check,.h4du-attention,.h4du-stale,.h4du-not_synced,.h4du-not_checked,.h4du-update_available{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-disabled{background:#e8ebf0;color:#687386}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}
+    .h4du-check,.h4du-attention,.h4du-stale,.h4du-not_synced,.h4du-not_checked,.h4du-update_available{background:#fff1c2;color:#774400}.h4du-bad,.h4du-error{background:#ffd9d4;color:#7a1e16}.h4du-incomplete{background:#f0dcff;color:#5b356d}.h4du-disabled{background:#e8ebf0;color:#687386}.h4du-credit{margin-top:28px;color:#687386;font-size:12px;text-align:right}.h4du-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}
     </style>';
 }

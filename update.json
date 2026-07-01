@@ -1,0 +1,7 @@
+{
+  "version": "0.2.9",
+  "package_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz",
+  "release_notes_url": "https://github.com/Help4Network/help4-disk-usage/blob/main/CHANGELOG.md",
+  "minimum_cpanel_version": "110",
+  "notes": "Public update manifest for Help4 Disk Usage. Production installs may point update_manifest_url at a signed or immutable release-channel manifest."
+}

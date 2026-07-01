@@ -37,16 +37,17 @@ cd "$tmp"
 curl -fsSL -o help4-disk-usage.tar.gz "https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz"
 tar -xzf help4-disk-usage.tar.gz
 cd help4-disk-usage-*
-HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz" ./install.sh
+HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz" \
+HELP4_DU_UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json" \
+./install.sh
 ```
 
 The installer snapshots existing plugin files before replacing them.
 
-## Production Release URL
+## Production Update Channel
 
-The default release URL points to GitHub `main.tar.gz`, which is useful during active development. For production, set the WHM/WHMCS release URL to an immutable GitHub Release tarball so every target receives the same reviewed artifact.
+The default update manifest points to repository `update.json`, which is useful during active development. For production, set the WHM/WHMCS update manifest URL to a reviewed JSON manifest and set its `package_url` to an immutable GitHub Release tarball so every target receives the same reviewed artifact.
 
 ## Skips
 
 Skip any server record that is disabled, missing SSH access, missing a decryptable root/admin credential, or not confirmed as a cPanel/WHM server.
-

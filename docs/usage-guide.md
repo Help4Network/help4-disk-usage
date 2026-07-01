@@ -33,14 +33,14 @@ Use that article when you need a plain-language explanation for hosting teams, s
 
 - Do not publish screenshots from live server evidence folders.
 - Use the generated tutorial screenshots from `outputs/help4-disk-usage-tutorial-pack.zip`.
-- Keep the visible footer credit: `Help4 Disk Usage by Help4 Network`.
+- Keep the small footer byline with the linked `Help4 Network` credit. The display name can be host-branded, but the builder link should remain visible.
 - Mention that cleanup is not automated.
 - Mention that foreground scans use a shared lock.
 - Mention that cPanel user refreshes are rate-limited.
 - Mention that root can tune scan limits and package-specific overrides in WHM.
 - Mention that WHMCS admins get an admin-home health widget for quick checks.
 - Mention that WHMCS Server Health is the admin/support view for server coverage, scan freshness, and failures.
-- Mention that updates are backup-first and should use immutable release tarballs for production.
+- Mention that updates are backup-first and should use a reviewed update manifest whose package URL points at immutable release tarballs for production.
 - Mention that WHMCS client rows are scoped to the logged-in client's current mapped hosting services.
 
 ## Version Note

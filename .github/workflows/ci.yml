@@ -40,7 +40,7 @@ jobs:
         run: |
           ./tests/smoke_scanner.sh
           ./tests/security_boundaries.sh
+          ./tests/branding_update_contract.sh
 
       - name: Build release tarball
         run: ./scripts/package.sh
-

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9
+
+- Reduced front-end branding with configurable display names and footer prefixes for WHM, cPanel, and WHMCS views.
+- Enforced a small linked Help4 Network builder byline at the bottom of plugin pages and report surfaces.
+- Added scanner report credit metadata for downstream report renderers.
+- Added `update.json` manifest support and `--manifest-url` updater checks so installs can follow a release channel.
+- Stored update manifest URLs in cPanel install metadata and WHMCS deploy/update commands.
+
 ## 0.2.8
 
 - Fixed WHMCS SSH actions to use the addon SSH port setting instead of the WHMCS cPanel/WHM API port.

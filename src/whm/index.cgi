@@ -7,6 +7,7 @@ use JSON::PP qw(decode_json);
 use POSIX qw(strftime);
 
 my $APP = 'Help4 Disk Usage';
+my $DEFAULT_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 my $CACHE_DIR = $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
 my $UPDATER = $ENV{HELP4_DU_UPDATER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update';
@@ -83,6 +84,7 @@ sub page {
         $total_inodes += $a->{inode_count} || 0;
         $sev{$a->{severity} || 'unknown'}++;
     }
+    my $display_name = h($config->{display_name} || $APP);
     my $scope = $is_root ? 'Root view: all accounts' : 'Reseller view: owned accounts only';
     my $rows = join '', map { account_row($_, $is_root) } @$accounts;
     $rows ||= '<tr><td colspan="8" class="muted">No scan cache exists yet. Run a refresh to collect data.</td></tr>';
@@ -95,14 +97,14 @@ sub page {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>$APP</title>
+  <title>$display_name</title>
   <link rel="stylesheet" href="/help4-disk-usage/help4-disk-usage.css">
 </head>
 <body>
   <main class="wrap">
     <header class="topbar">
       <div>
-        <h1>$APP</h1>
+        <h1>$display_name</h1>
         <p class="muted">$scope. Signed in as @{[h($auth_user || 'unknown')]}.</p>
       </div>
       <div class="actions">$refresh_all</div>
@@ -128,7 +130,7 @@ sub page {
     </section>
     $settings
     $updates
-    <footer class="credit">Help4 Disk Usage by Help4 Network</footer>
+    @{[credit_html($config)]}
   </main>
 </body>
 </html>
@@ -147,12 +149,15 @@ sub settings_panel {
         <label>cPanel refreshes per hour<input name="cpanel_refreshes_per_hour" value="@{[h($cfg->{cpanel_refreshes_per_hour})]}"></label>
         <label>cPanel min interval seconds<input name="cpanel_min_interval_seconds" value="@{[h($cfg->{cpanel_min_interval_seconds})]}"></label>
         <label>cPanel scan max seconds<input name="cpanel_scan_max_seconds" value="@{[h($cfg->{cpanel_scan_max_seconds})]}"></label>
+        <label>Display name<input name="display_name" value="@{[h($cfg->{display_name})]}"></label>
+        <label>Footer prefix<input name="credit_prefix" value="@{[h($cfg->{credit_prefix})]}"></label>
         <label class="wide">Release tarball URL<input name="release_url" value="@{[h($cfg->{release_url})]}"></label>
+        <label class="wide">Update manifest URL<input name="update_manifest_url" value="@{[h($cfg->{update_manifest_url})]}"></label>
         <label class="wide">Shared scan lock directory<input name="scan_lock_dir" value="@{[h($cfg->{scan_lock_dir})]}"></label>
         <label class="wide">Package overrides JSON<textarea name="package_overrides_json" rows="8">@{[h($overrides)]}</textarea></label>
         <div class="wide"><button class="button" type="submit">Save limits</button></div>
       </form>
-      <p class="muted">All foreground scans use the shared lock, so only one scan runs at a time. cPanel user refreshes are also throttled by account and can be overridden by package name.</p>
+      <p class="muted">All foreground scans use the shared lock, so only one scan runs at a time. cPanel user refreshes are also throttled by account and can be overridden by package name. Display name and footer prefix can be customized, but the Help4 Network builder credit link remains visible.</p>
     </section>
 HTML
 }
@@ -168,14 +173,15 @@ sub update_panel {
         $status_html = '<p><strong>Status:</strong> <span class="pill ' . h($badge) . '">' . h($badge) . '</span>'
             . '<br>Installed: ' . h($status->{installed_version} || $current || 'unknown')
             . '<br>Available: ' . h($status->{available_version} || 'unknown')
-            . '<br>Source: ' . h($status->{release_url} || $cfg->{release_url} || '')
+            . '<br>Manifest: ' . h($status->{manifest_url} || $cfg->{update_manifest_url} || '')
+            . '<br>Package: ' . h($status->{release_url} || $cfg->{release_url} || '')
             . $err . $backup . '</p>';
     }
     return <<"HTML";
     <section>
       <h2>Repository Updates</h2>
       $status_html
-      <p class="muted">Updates download the configured release tarball, compare versions, run the normal backup-first installer, and preserve scan cache/config. Use this after pushing a new release or changing the release URL.</p>
+      <p class="muted">Updates read the configured manifest when available, download the selected release tarball, compare versions, run the normal backup-first installer, and preserve scan cache/config. Use this after publishing a new release or changing update channels.</p>
       <p>
         <a class="button" href="?update_check=1">Check for update</a>
         <a class="button" href="?update_apply=1">Apply update</a>
@@ -239,7 +245,10 @@ sub read_account_caches {
 sub default_config {
     return {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
+        display_name                  => 'Disk Usage Audit',
+        credit_prefix                 => 'Built by',
         release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz',
+        update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
         cpanel_min_interval_seconds   => 300,
@@ -257,7 +266,10 @@ sub load_config {
         }
     }
     $cfg->{scan_lock_dir} ||= File::Spec->catdir($CACHE_DIR, 'locks');
+    $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
+    $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
     $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
+    $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
     $cfg->{cpanel_min_interval_seconds} = bounded_int($cfg->{cpanel_min_interval_seconds}, 0, 3600, 300);
@@ -270,7 +282,10 @@ sub save_settings {
     my ($q, $current) = @_;
     my $cfg = {
         scan_lock_dir                 => clean_abs_path($q->{scan_lock_dir}) || $current->{scan_lock_dir},
+        display_name                  => clean_label($q->{display_name}, $current->{display_name}),
+        credit_prefix                 => clean_label($q->{credit_prefix}, $current->{credit_prefix}),
         release_url                   => clean_url($q->{release_url}) || $current->{release_url},
+        update_manifest_url           => clean_url($q->{update_manifest_url}) || $current->{update_manifest_url},
         whm_scan_max_seconds          => bounded_int($q->{whm_scan_max_seconds}, 10, 1800, $current->{whm_scan_max_seconds}),
         cpanel_refreshes_per_hour     => bounded_int($q->{cpanel_refreshes_per_hour}, 1, 24, $current->{cpanel_refreshes_per_hour}),
         cpanel_min_interval_seconds   => bounded_int($q->{cpanel_min_interval_seconds}, 0, 3600, $current->{cpanel_min_interval_seconds}),
@@ -290,7 +305,13 @@ sub save_settings {
     chmod 0666, $lock if -e $lock;
     write_json_file($CONFIG_FILE, $cfg) or return 'Settings not saved: unable to write config file.';
     chmod 0644, $CONFIG_FILE;
-    return 'Scan limits saved.';
+    return 'Settings saved.';
+}
+
+sub credit_html {
+    my ($cfg) = @_;
+    my $prefix = h($cfg->{credit_prefix} || 'Built by');
+    return '<footer class="credit">' . $prefix . ' <a href="https://help4network.com/" target="_blank" rel="noopener">Help4 Network</a></footer>';
 }
 
 sub sanitize_overrides {
@@ -340,6 +361,15 @@ sub clean_url {
     return '';
 }
 
+sub clean_label {
+    my ($value, $default) = @_;
+    $value = '' unless defined $value;
+    $value =~ s/^\s+|\s+\z//g;
+    $value =~ s/[\r\n\t ]+/ /g;
+    $value =~ s/[^A-Za-z0-9_ .:()\/+-]//g;
+    return substr($value || $default, 0, 80);
+}
+
 sub current_version {
     return '' unless -x $SCANNER;
     open my $fh, '-|', $SCANNER, '--help' or return '';
@@ -356,7 +386,7 @@ sub current_version {
 sub run_update {
     my ($mode, $cfg) = @_;
     return { ok => 0, status => 'error', error => 'Updater binary is not installed yet. Reinstall this release once to enable updates.' } unless -x $UPDATER;
-    my @cmd = ($UPDATER, $mode eq 'apply' ? '--apply' : '--check', '--release-url', $cfg->{release_url});
+    my @cmd = ($UPDATER, $mode eq 'apply' ? '--apply' : '--check', '--manifest-url', $cfg->{update_manifest_url}, '--release-url', $cfg->{release_url});
     open my $fh, '-|', @cmd or return { ok => 0, status => 'error', error => 'Unable to start updater.' };
     local $/;
     my $json = <$fh>;

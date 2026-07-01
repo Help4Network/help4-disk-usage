@@ -1,7 +1,7 @@
 {if $disabled}
-    <div class="alert alert-info">Help4 Disk Usage client reports are currently disabled.</div>
+    <div class="alert alert-info">{$displayName|escape} client reports are currently disabled.</div>
 {else}
-    <h2>Help4 Disk Usage</h2>
+    <h2>{$displayName|escape}</h2>
     <p class="text-muted">Latest disk and inode scan summaries for your hosting services.</p>
 
     {if $accounts|@count eq 0}
@@ -41,4 +41,4 @@
     {/if}
 {/if}
 
-<p class="text-muted text-right"><small>{$creditText|escape}</small></p>
+<p class="text-muted text-right"><small>{$creditPrefix|escape} <a href="https://help4network.com/" target="_blank" rel="noopener">Help4 Network</a></small></p>

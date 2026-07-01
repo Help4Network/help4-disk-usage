@@ -9,7 +9,7 @@ use Fcntl qw(:flock);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 
-our $VERSION = '0.2.8';
+our $VERSION = '0.2.9';
 
 my %opt = (
     scope          => 'all',
@@ -87,6 +87,10 @@ for my $acct (@accounts) {
 my $report = {
     app                 => 'Help4 Disk Usage',
     version             => $VERSION,
+    credit              => {
+        text => 'Built by Help4 Network',
+        url  => 'https://help4network.com/',
+    },
     generated_at_epoch  => $started,
     generated_at        => iso_time($started),
     host                => safe_hostname(),

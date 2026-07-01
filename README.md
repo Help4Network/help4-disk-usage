@@ -133,8 +133,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.8.tar.gz
-cd help4-disk-usage-0.2.8
+tar -xzf help4-disk-usage-0.2.9.tar.gz
+cd help4-disk-usage-0.2.9
 sudo ./install.sh
 ```
 
@@ -147,9 +147,9 @@ The installer:
 5. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
 6. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
 7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
-8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits.
+8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits, display-name override, footer prefix, release URL, and update manifest URL.
 9. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
-10. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version and release URL.
+10. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version, release URL, update manifest URL, and backup path.
 
 ## Updates
 
@@ -159,7 +159,7 @@ Installed cPanel servers include:
 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update
 ```
 
-The updater downloads the configured release tarball, reads the available scanner version, compares it with the installed scanner version, and only runs the normal installer when an update is available or `--force` is used. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
+The updater reads the configured update manifest when available, downloads the selected release tarball, reads the available scanner version, compares it with the installed scanner version, and only runs the normal installer when an update is available or `--force` is used. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
 
 Manual check:
 
@@ -173,7 +173,15 @@ Manual update:
 sudo /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --apply
 ```
 
-WHM root users can use **Help4 Disk Usage > Repository Updates** to check or apply the configured release. The release URL is stored in `/var/cpanel/help4-disk-usage/config.json` and defaults to the public GitHub `main.tar.gz` archive. For production, point it at an immutable GitHub Release tarball.
+WHM root users can use **Help4 Disk Usage > Repository Updates** to check or apply the configured release. The update manifest URL and fallback release URL are stored in `/var/cpanel/help4-disk-usage/config.json`.
+
+The default update manifest is:
+
+```text
+https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json
+```
+
+The manifest publishes `version`, `package_url`, and optional `release_notes_url`. Production channels should point `update_manifest_url` at a reviewed manifest and `package_url` at an immutable release artifact.
 
 Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 
@@ -205,11 +213,13 @@ Then in WHMCS admin:
 2. Activate **Help4 Disk Usage**.
 3. Configure:
    - Release Tarball URL
+   - Update Manifest URL
    - SSH Port
    - Sync Account Limit
    - Per-Account Scan Max Seconds
    - Client Area Reports
-   - Footer Credit
+   - Display Name
+   - Footer Credit Prefix
 4. Set administrator role access for the addon.
 5. Open **Addons > Help4 Disk Usage**.
 
@@ -309,12 +319,15 @@ Defaults:
   "cpanel_refreshes_per_hour": 3,
   "cpanel_min_interval_seconds": 300,
   "cpanel_scan_max_seconds": 60,
+  "display_name": "Disk Usage Audit",
+  "credit_prefix": "Built by",
   "scan_lock_dir": "/var/cpanel/help4-disk-usage/locks",
+  "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "package_overrides": {}
 }
 ```
 
-Root can edit these in WHM under **Help4 Disk Usage > Scan Limits**.
+Root can edit these in WHM under **Help4 Disk Usage > Scan Limits**. The display name and footer prefix are intentionally customizable so hosts can match their support portal, but every page keeps the small linked `Help4 Network` builder byline.
 
 Controls:
 
@@ -358,7 +371,7 @@ cPanel user throttle state is stored under the account's own `.cpanel/help4-disk
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
 - WHMCS deploy/check/update/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
-- WHMCS update actions use the configured release tarball URL and the cPanel-side backup-first installer/updater.
+- WHMCS update actions use the configured update manifest plus fallback release tarball URL and the cPanel-side backup-first installer/updater.
 - WHMCS strips absolute scanner paths before storing support summary lists.
 - WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
 - JSON cache files should not be made web-accessible.
@@ -461,11 +474,12 @@ References:
 
 ## Tests
 
-Run scanner and security boundary smoke tests:
+Run scanner, security boundary, and branding/update contract smoke tests:
 
 ```bash
 ./tests/smoke_scanner.sh
 ./tests/security_boundaries.sh
+./tests/branding_update_contract.sh
 ```
 
 Run syntax checks:
@@ -481,4 +495,3 @@ php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
 ## License
 
 MIT License. Use it, modify it, ship it, include it in hosting stacks, and package it with commercial products. Keep the Help4 credit visible.
-By default, the WHMCS module uses the public GitHub `main.tar.gz` archive. For production release management, publish a GitHub Release tarball and set **Release Tarball URL** to that immutable asset.

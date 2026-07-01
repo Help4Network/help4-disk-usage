@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz"
+DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
 CONFIG_FILE="${HELP4_DU_CONFIG:-$CACHE_DIR/config.json}"
@@ -11,16 +12,20 @@ SCANNER="$APP_DIR/bin/help4-disk-usage-scan"
 MODE="check"
 FORCE=0
 RELEASE_URL="${HELP4_DU_RELEASE_URL:-}"
+MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-}"
+RELEASE_NOTES_URL=""
 
 usage() {
   cat <<USAGE
 Help4 Disk Usage updater
 
 Usage:
-  help4-disk-usage-update --check [--release-url URL]
-  help4-disk-usage-update --apply [--release-url URL] [--force]
+  help4-disk-usage-update --check [--manifest-url URL] [--release-url URL]
+  help4-disk-usage-update --apply [--manifest-url URL] [--release-url URL] [--force]
 
 Output is JSON so WHM and WHMCS can report installed/available versions.
+When a manifest URL is configured, it should return JSON with at least:
+  {"version":"0.2.9","package_url":"https://example/package.tar.gz"}
 USAGE
 }
 
@@ -32,6 +37,10 @@ while [ "$#" -gt 0 ]; do
     --release-url)
       shift
       RELEASE_URL="${1:-}"
+      ;;
+    --manifest-url)
+      shift
+      MANIFEST_URL="${1:-}"
       ;;
     --help|-h)
       usage
@@ -53,18 +62,32 @@ fi
 if [ -z "$RELEASE_URL" ] && [ -f "$INSTALL_META" ]; then
   RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$INSTALL_META")"
 fi
+if [ -z "$MANIFEST_URL" ] && [ -f "$INSTALL_META" ]; then
+  MANIFEST_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{update_manifest_url} || "";' "$INSTALL_META")"
+fi
 if [ -z "$RELEASE_URL" ] && [ -f "$CONFIG_FILE" ]; then
   RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$CONFIG_FILE")"
 fi
+if [ -z "$MANIFEST_URL" ] && [ -f "$CONFIG_FILE" ]; then
+  MANIFEST_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{update_manifest_url} || "";' "$CONFIG_FILE")"
+fi
 RELEASE_URL="${RELEASE_URL:-$DEFAULT_RELEASE_URL}"
+MANIFEST_URL="${MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
 
-case "$RELEASE_URL" in
-  https://*|http://*) ;;
-  *)
-    perl -MJSON::PP -e 'print encode_json({ok=>JSON::PP::false,status=>"error",error=>"release_url must be http or https"}), "\n"'
-    exit 2
-    ;;
-esac
+validate_url() {
+  local name="$1" value="$2"
+  case "$value" in
+    https://*|http://*) return 0 ;;
+    "") return 0 ;;
+    *)
+      NAME="$name" perl -MJSON::PP -e 'print encode_json({ok=>JSON::PP::false,status=>"error",error=>$ENV{NAME} . " must be http or https"}), "\n"'
+      exit 2
+      ;;
+  esac
+}
+
+validate_url release_url "$RELEASE_URL"
+validate_url manifest_url "$MANIFEST_URL"
 
 json_string() {
   JSON_VALUE="${1:-}" perl -MJSON::PP -e 'print encode_json($ENV{JSON_VALUE} // "")'
@@ -72,7 +95,7 @@ json_string() {
 
 json_response() {
   local ok="$1" status="$2" current="$3" available="$4" error="$5" backup="${6:-}" changed="${7:-false}"
-  OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" \
+  OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" MANIFEST_URL="$MANIFEST_URL" RELEASE_NOTES_URL="$RELEASE_NOTES_URL" \
     UPDATE_AVAILABLE="$([ "$status" = "update_available" ] && echo true || echo false)" \
     CHANGED="$changed" ERROR="$error" BACKUP="$backup" \
     perl -MJSON::PP -e '
@@ -83,11 +106,13 @@ json_response() {
       installed_version => $ENV{CURRENT},
       available_version => $ENV{AVAILABLE},
       release_url => $ENV{RELEASE_URL},
+      manifest_url => $ENV{MANIFEST_URL},
       update_available => $bool->($ENV{UPDATE_AVAILABLE}),
       changed => $bool->($ENV{CHANGED}),
     );
     $out{error} = $ENV{ERROR} if length $ENV{ERROR};
     $out{backup} = $ENV{BACKUP} if length $ENV{BACKUP};
+    $out{release_notes_url} = $ENV{RELEASE_NOTES_URL} if length $ENV{RELEASE_NOTES_URL};
     print encode_json(\%out), "\n";
   '
 }
@@ -126,6 +151,27 @@ cleanup() {
 trap cleanup EXIT
 
 ARCHIVE="$TMP/help4-disk-usage.tar.gz"
+if [ -n "$MANIFEST_URL" ]; then
+  MANIFEST="$TMP/update.json"
+  if curl -fsSL --connect-timeout 15 --max-time 60 -o "$MANIFEST" "$MANIFEST_URL"; then
+    manifest_values="$(perl -MJSON::PP -0777 -e '
+      my $d = eval { decode_json(<>)} || {};
+      print join "\n", map { $d->{$_} || "" } qw(version package_url release_notes_url);
+    ' "$MANIFEST")"
+    AVAILABLE_FROM_MANIFEST="$(printf '%s\n' "$manifest_values" | sed -n '1p')"
+    RELEASE_FROM_MANIFEST="$(printf '%s\n' "$manifest_values" | sed -n '2p')"
+    RELEASE_NOTES_URL="$(printf '%s\n' "$manifest_values" | sed -n '3p')"
+    validate_url package_url "$RELEASE_FROM_MANIFEST"
+    validate_url release_notes_url "$RELEASE_NOTES_URL"
+    if [ -n "$RELEASE_FROM_MANIFEST" ]; then
+      RELEASE_URL="$RELEASE_FROM_MANIFEST"
+    fi
+  else
+    json_response false error "$(installed_version)" "" "unable to download update manifest"
+    exit 3
+  fi
+fi
+
 if ! curl -fsSL --connect-timeout 15 --max-time 120 -o "$ARCHIVE" "$RELEASE_URL"; then
   json_response false error "$(installed_version)" "" "unable to download release tarball"
   exit 3
@@ -142,7 +188,8 @@ if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/src/bin/help4-disk-usage-scan" ] || [ !
 fi
 
 CURRENT="$(installed_version)"
-AVAILABLE="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$SRC_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
+AVAILABLE="${AVAILABLE_FROM_MANIFEST:-}"
+AVAILABLE="${AVAILABLE:-$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$SRC_DIR/src/bin/help4-disk-usage-scan" | head -n 1)}"
 if [ -z "$AVAILABLE" ]; then
   json_response false error "$CURRENT" "" "unable to determine available version"
   exit 6

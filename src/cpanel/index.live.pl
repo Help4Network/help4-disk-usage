@@ -56,26 +56,27 @@ sub page {
     my ($a, $notice, $user) = @_;
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
     my $summary = $a ? summary($a) : '<div class="empty">No account scan cache exists yet.</div>';
+    my $display_name = h($config->{display_name} || $APP);
     return <<"HTML";
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>$APP</title>
+  <title>$display_name</title>
   <link rel="stylesheet" href="help4-disk-usage.css">
 </head>
 <body>
   <main class="wrap">
     <header class="topbar">
       <div>
-        <h1>$APP</h1>
+        <h1>$display_name</h1>
         <p class="muted">Account view for @{[h($user || 'unknown')]}. Paths are shown relative to your home directory.</p>
       </div>
       <div class="actions"><a class="button" href="?refresh=1">Refresh scan</a></div>
     </header>
     $notice_html
     $summary
-    <footer class="credit">Help4 Disk Usage by Help4 Network</footer>
+    @{[credit_html($config)]}
   </main>
 </body>
 </html>
@@ -151,6 +152,8 @@ sub read_json {
 sub default_config {
     return {
         scan_lock_dir                 => '/var/cpanel/help4-disk-usage/locks',
+        display_name                  => 'Disk Usage Audit',
+        credit_prefix                 => 'Built by',
         cpanel_refreshes_per_hour     => 3,
         cpanel_min_interval_seconds   => 300,
         cpanel_scan_max_seconds       => 60,
@@ -167,11 +170,28 @@ sub load_config {
         }
     }
     $cfg->{scan_lock_dir} ||= '/var/cpanel/help4-disk-usage/locks';
+    $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
+    $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
     $cfg->{cpanel_min_interval_seconds} = bounded_int($cfg->{cpanel_min_interval_seconds}, 0, 3600, 300);
     $cfg->{cpanel_scan_max_seconds} = bounded_int($cfg->{cpanel_scan_max_seconds}, 10, 600, 60);
     $cfg->{package_overrides} = {} unless ref $cfg->{package_overrides} eq 'HASH';
     return $cfg;
+}
+
+sub credit_html {
+    my ($cfg) = @_;
+    my $prefix = h($cfg->{credit_prefix} || 'Built by');
+    return '<footer class="credit">' . $prefix . ' <a href="https://help4network.com/" target="_blank" rel="noopener">Help4 Network</a></footer>';
+}
+
+sub clean_label {
+    my ($value, $default) = @_;
+    $value = '' unless defined $value;
+    $value =~ s/^\s+|\s+\z//g;
+    $value =~ s/[\r\n\t ]+/ /g;
+    $value =~ s/[^A-Za-z0-9_ .:()\/+-]//g;
+    return substr($value || $default, 0, 80);
 }
 
 sub limits_for_user {

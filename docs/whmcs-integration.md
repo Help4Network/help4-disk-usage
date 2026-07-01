@@ -59,13 +59,13 @@ If any of these are missing, use the manual deployment command shown by the addo
 
 The addon uses the addon setting **Default SSH Port** for SSH connections. It intentionally does not use the WHMCS server record port because cPanel server records commonly store WHM/API port `2087`.
 
-## Updates from Repo or Release Tarball
+## Updates from Manifest or Release Tarball
 
 WHMCS **Check** asks the cPanel server to run `help4-disk-usage-update --check` when the updater is installed. It stores installed and available versions in the WHMCS server health row.
 
-WHMCS **Update** asks the cPanel server to run `help4-disk-usage-update --apply`. Older installs that do not have the updater yet fall back to the normal backup-first installer command. The release tarball URL comes from the addon setting **Release Tarball URL**.
+WHMCS **Update** asks the cPanel server to run `help4-disk-usage-update --apply`. Older installs that do not have the updater yet fall back to the normal backup-first installer command. The update manifest URL comes from **Update Manifest URL** and the fallback package URL comes from **Release Tarball URL**.
 
-For production release management, set **Release Tarball URL** to an immutable GitHub Release asset. For live development, it can point at the public `main.tar.gz` archive.
+For production release management, point **Update Manifest URL** at a reviewed JSON manifest whose `package_url` is an immutable GitHub Release asset. For live development, it can point at the repository `update.json`, which may reference the public `main.tar.gz` archive.
 
 ## Data Mapping
 

@@ -38,7 +38,7 @@
 - WHM root can edit cPanel refresh limits, cPanel scan caps, WHM scan caps, and package-specific overrides in the WHM UI.
 - UI performs output escaping for rendered values.
 - WHMCS one-click deploy/check/sync requires PHP `ssh2`; otherwise admins use the manual deployment command.
-- WHM and WHMCS update flows use the configured release tarball URL and the backup-first installer. Production deployments should prefer immutable GitHub Release assets over a moving branch archive.
+- WHM and WHMCS update flows use the configured update manifest plus fallback release tarball URL and the backup-first installer. Production deployments should prefer reviewed manifests that point at immutable GitHub Release assets over a moving branch archive.
 - WHMCS sync ignores invalid account usernames, normalizes severity values, and strips unsupported fields from synced scan item arrays.
 - WHMCS does not perform file deletion or cleanup actions.
 
