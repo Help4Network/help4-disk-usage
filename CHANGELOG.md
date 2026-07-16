@@ -5,6 +5,7 @@
 - Added a host-pinned phpseclib 2/3 fallback for WHMCS installations whose PHP runtime does not provide the native `ssh2` extension.
 - Kept fingerprint verification before password authentication across both SSH transports.
 - Added unit coverage for SSH public-key parsing, fingerprint formats, remote exit markers, and pin-before-auth rejection.
+- Added a reproducible dummy-data screenshot and tutorial-pack builder that rejects known live identifiers before packaging.
 
 ## 0.3.0
 

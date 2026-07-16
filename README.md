@@ -423,9 +423,18 @@ Expected set:
 
 - WHM root dashboard.
 - cPanel account report.
-- Marketing composite or annotated screenshots.
+- WHMCS deployment and reporting.
+- WHMCS admin-home health widget.
+- WHMCS server health.
+- WHMCS client report.
 
-Live authenticated screenshots require a working browser/Computer Use session. The included screenshots are generated from verified Genie-rendered HTML evidence.
+Public screenshots are generated entirely from dummy fixtures. Live authenticated screenshots and raw live HTML are engineering evidence only and must not be placed in public tutorial packages.
+
+With Node.js, Playwright, `zip`, and `rg` available, rebuild the privacy-checked tutorial bundle with:
+
+```bash
+./scripts/build-tutorial-pack.sh
+```
 
 ## Genie Validation
 
@@ -437,7 +446,7 @@ Verified on Genie:
 - WHM AppConfig registration.
 - cPanel Jupiter dynamicUI registration.
 - WHM root render.
-- cPanel account render for `adpoveva`.
+- cPanel account render for a real account identity, omitted from public artifacts.
 - cPanel output without raw JSON or absolute `/home/` path leakage.
 - Bounded sample scans without timeout.
 - Cron installed.
