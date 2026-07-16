@@ -10,7 +10,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="/root/help4-disk-usage-install-backups/${STAMP}"
 VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$ROOT_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
-RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz}"
+RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz}"
 UPDATE_MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json}"
 
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
@@ -59,7 +59,7 @@ if [ ! -e "$CONFIG_FILE" ]; then
    "cpanel_scan_max_seconds" : 60,
    "display_name" : "Disk Usage Audit",
    "package_overrides" : {},
-   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz",
+   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz",
    "scan_lock_dir" : "/var/cpanel/help4-disk-usage/locks",
    "update_manifest_url" : "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
    "whm_scan_max_seconds" : 90
@@ -75,6 +75,9 @@ CONFIG_FILE="$CONFIG_FILE" RELEASE_URL="$RELEASE_URL" UPDATE_MANIFEST_URL="$UPDA
   my $cfg = eval { decode_json($raw) } || {};
   $cfg->{display_name} ||= "Disk Usage Audit";
   $cfg->{credit_prefix} ||= "Built by";
+  if (($cfg->{release_url} || "") eq "https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz") {
+    $cfg->{release_url} = $ENV{RELEASE_URL};
+  }
   $cfg->{release_url} ||= $ENV{RELEASE_URL};
   $cfg->{update_manifest_url} ||= $ENV{UPDATE_MANIFEST_URL};
   open my $out, ">", "$path.$$" or die "cannot write config temp: $!";

@@ -14,7 +14,7 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
         protected $description = 'cPanel server scan health from Help4 Disk Usage.';
         protected $weight = 40;
         protected $cache = false;
-        protected $requiredPermission = '';
+        protected $requiredPermission = 'Perform Server Operations';
 
         public function getData()
         {
@@ -124,6 +124,9 @@ if (class_exists('\WHMCS\Module\AbstractWidget') && !class_exists('Help4DiskUsag
             }
             if (($state->status ?? '') === 'update_available') {
                 return ['status' => 'update_available', 'next_step' => 'Run Update to pull the configured release.', 'scan_age' => $this->age($state->last_scan_at ?? null), 'sort' => 25];
+            }
+            if (($state->status ?? '') === 'partial') {
+                return ['status' => 'attention', 'next_step' => 'Run Sync again; accounts are still pending.', 'scan_age' => $this->age($state->last_scan_at ?? null), 'sort' => 28];
             }
             if (!$state->last_scan_at) {
                 return ['status' => 'not_synced', 'next_step' => 'Run Sync to collect the first scan.', 'scan_age' => 'never', 'sort' => 40];

@@ -90,6 +90,17 @@ h2 {
   font-size: 12px;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-form {
+  display: inline-block;
+  margin: 0;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

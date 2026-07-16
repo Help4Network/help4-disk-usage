@@ -31,11 +31,11 @@ JSON_PAYLOAD="$json" perl -MJSON::PP=decode_json -e '
 '
 
 if [ "$(id -u)" -ne 0 ]; then
-  if "$ROOT_DIR/src/bin/help4-disk-usage-scan" --scope account --account not_the_effective_user --home "$TMP_DIR/fixture/alice" >/tmp/h4du-security.out 2>&1; then
+  if "$ROOT_DIR/src/bin/help4-disk-usage-scan" --scope account --account not_the_effective_user --home "$TMP_DIR/fixture/alice" >"$TMP_DIR/security.out" 2>&1; then
     echo "non-root scanner accepted a mismatched account/home" >&2
     exit 1
   fi
-  grep -Eq "Non-root scans may only scan|Non-root scans must" /tmp/h4du-security.out
+  grep -Eq "Non-root scans may only scan|Non-root scans must" "$TMP_DIR/security.out"
 fi
 
 echo "security boundary smoke test passed"

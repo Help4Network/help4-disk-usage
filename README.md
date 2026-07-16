@@ -57,6 +57,8 @@ CHANGELOG.md                                          Release history
 - Visible `scanned_at` timestamps and scan completeness.
 - Root-editable scan limits for WHM and cPanel refreshes.
 - Shared foreground scan lock so GUI refreshes do not stack.
+- Whole-run scan budgets with oldest-cache-first rotation for large fleets.
+- POST-only scan, settings, and update actions protected by short-lived nonces.
 - Root update panel for checking/applying configured repository or release tarball updates.
 
 ### cPanel
@@ -68,6 +70,7 @@ CHANGELOG.md                                          Release history
 - Does not expose other accounts or server-wide paths.
 - User-triggered refreshes are rate limited by default.
 - cPanel refresh limits can be overridden by cPanel package name.
+- Refresh actions are POST-only and protected by an account-local nonce.
 
 ### WHMCS
 
@@ -77,6 +80,8 @@ CHANGELOG.md                                          Release history
 - Admin **Server Health** view across WHMCS cPanel server records.
 - cPanel server list from WHMCS `tblservers`.
 - Deployment/check/update/sync actions for cPanel servers.
+- Fail-closed SSH host-key pinning for remote actions.
+- Verified remote exit status, bounded execution time, and bounded output.
 - Health states for missing, stale, erroring, disabled, attention-needed, and healthy servers.
 - Manual deployment command when one-click SSH deploy is unavailable.
 - Per-account scan data mapped to `tblhosting` by server ID and cPanel username.
@@ -98,7 +103,7 @@ The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md
 
 - cPanel & WHM with the Jupiter theme.
 - Root shell access for install.
-- Perl with common core modules: `File::Find`, `File::Path`, `File::Spec`, `Fcntl`, `JSON::PP`, `POSIX`.
+- Perl with common core modules: `File::Find`, `File::Path`, `File::Spec`, `Fcntl`, `JSON::PP`, `POSIX`, `Sys::Hostname`.
 - `/usr/local/cpanel/bin/register_appconfig`
 - `/usr/local/cpanel/scripts/install_plugin`
 - `/usr/local/cpanel/scripts/uninstall_plugin`
@@ -108,7 +113,7 @@ The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md
 - WHMCS with addon module support.
 - PHP compatible with current WHMCS releases.
 - WHMCS database access through `WHMCS\Database\Capsule`.
-- Optional PHP `ssh2` extension for one-click deploy/check/sync actions.
+- Optional PHP `ssh2` extension with SHA-256 fingerprint support for one-click deploy/check/update/sync actions.
 
 If `ssh2` is not installed, the module still provides manual deployment commands and can store/report data after scans are synced by another trusted workflow.
 
@@ -133,8 +138,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.2.9.tar.gz
-cd help4-disk-usage-0.2.9
+tar -xzf help4-disk-usage-0.3.0.tar.gz
+cd help4-disk-usage-0.3.0
 sudo ./install.sh
 ```
 
@@ -159,7 +164,7 @@ Installed cPanel servers include:
 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update
 ```
 
-The updater reads the configured update manifest when available, downloads the selected release tarball, reads the available scanner version, compares it with the installed scanner version, and only runs the normal installer when an update is available or `--force` is used. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
+The updater reads the configured update manifest, compares the published version with the installed scanner, and avoids downloading the package when a check already proves the server is current. Apply operations require the manifest's SHA-256 digest to match the downloaded package before extraction. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
 
 Manual check:
 
@@ -181,7 +186,7 @@ The default update manifest is:
 https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json
 ```
 
-The manifest publishes `version`, `package_url`, and optional `release_notes_url`. Production channels should point `update_manifest_url` at a reviewed manifest and `package_url` at an immutable release artifact.
+The manifest publishes `version`, immutable `package_url`, required `sha256`, and optional `release_notes_url`. Update URLs must use HTTPS and may not contain embedded credentials. A check reads only the small manifest when it already contains a version; it downloads the package only when an apply or fallback inspection is needed.
 
 Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 
@@ -215,8 +220,10 @@ Then in WHMCS admin:
    - Release Tarball URL
    - Update Manifest URL
    - SSH Port
+   - SSH Host Fingerprints
+   - Allow Unpinned SSH (leave off)
    - Sync Account Limit
-   - Per-Account Scan Max Seconds
+   - Whole Sync Scan Max Seconds
    - Client Area Reports
    - Display Name
    - Footer Credit Prefix
@@ -252,8 +259,8 @@ Open **Addons > Help4 Disk Usage > Servers & Deploy** for the install/sync workf
 
 For each cPanel server, WHMCS provides:
 
-- **Check**: verifies expected plugin files exist and compares installed/available versions from the configured release tarball.
-- **Deploy**: downloads the configured release tarball on the cPanel server and runs `install.sh`.
+- **Check**: verifies expected plugin files exist and compares installed/available versions from the configured update manifest.
+- **Deploy**: downloads the package named by the update manifest, verifies its SHA-256 digest, and runs `install.sh`.
 - **Update**: runs the cPanel-side updater when present, or falls back to the backup-first installer for older installs.
 - **Sync**: runs a bounded scanner command and imports JSON summaries into WHMCS.
 
@@ -262,14 +269,19 @@ One-click actions require:
 - PHP `ssh2` extension installed in the WHMCS PHP runtime.
 - A WHMCS server record with a decryptable root/admin SSH password.
 - SSH access from WHMCS to the cPanel server.
+- A verified SSH host fingerprint mapped by server ID, hostname, or IP.
 
-The addon uses its **Default SSH Port** setting for SSH. It does not use the WHMCS server record port, because cPanel server records commonly store the WHM/API port such as `2087`.
+The addon uses its **Default SSH Port** setting for SSH. It does not use the WHMCS server record port, because cPanel server records commonly store the WHM/API port such as `2087`. Remote actions fail closed when no matching host fingerprint exists unless an administrator deliberately enables the unsafe compatibility override.
 
-If those are not available, use the manual command shown in the WHMCS module:
+The first blocked connection reports the negotiated fingerprint without authenticating. Verify it against the server console, for example with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`, then enter JSON such as:
 
-```bash
-set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; cd "$tmp"; curl -fsSL -o help4-disk-usage.tar.gz '<release-url>'; tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; ./install.sh
+```json
+{
+  "6": "SHA256:verified-fingerprint-from-server-console"
+}
 ```
+
+If SSH automation is unavailable, upload a verified release tarball and use the normal cPanel-server install steps.
 
 ## WHMCS Customer Reporting
 
@@ -331,11 +343,11 @@ Root can edit these in WHM under **Help4 Disk Usage > Scan Limits**. The display
 
 Controls:
 
-- `scan_lock_dir`: shared lock directory. The installer creates a root-owned directory and a writable `scan.lock` file. WHM, cPanel, cron, and WHMCS-triggered installs should use the same lock so only one foreground/cache-writing scan runs at a time.
-- `whm_scan_max_seconds`: runtime cap for WHM-triggered scans.
+- `scan_lock_dir`: shared lock directory below `/var/cpanel/help4-disk-usage`. The installer creates a root-owned directory and a writable advisory `scan.lock` file. WHM, cPanel, cron, and WHMCS-triggered scans use the same lock so only one cache-writing scan runs at a time.
+- `whm_scan_max_seconds`: whole-run runtime cap for WHM-triggered scans.
 - `cpanel_refreshes_per_hour`: account-level hourly refresh cap for cPanel users.
 - `cpanel_min_interval_seconds`: minimum time between cPanel user refreshes.
-- `cpanel_scan_max_seconds`: runtime cap for cPanel user scans.
+- `cpanel_scan_max_seconds`: whole-run runtime cap for cPanel user scans.
 - `package_overrides`: optional per-package cPanel limits.
 
 Package override example:
@@ -357,6 +369,8 @@ Package override example:
 
 cPanel user throttle state is stored under the account's own `.cpanel/help4-disk-usage/rate.json`. It does not grant cross-account visibility.
 
+When a whole-server scan reaches its budget, the scanner writes the completed account caches, reports `accounts_remaining`, and rotates the oldest or missing cache to the front on the next run. This prevents the first accounts alphabetically from monopolizing every bounded scan.
+
 ## Security Model
 
 - Root WHM users see all accounts.
@@ -368,10 +382,13 @@ cPanel user throttle state is stored under the account's own `.cpanel/help4-disk
 - Scanner does not cross filesystem device boundaries from account home.
 - GUI-triggered scans use a shared non-blocking lock.
 - cPanel user refreshes are throttled by account and can be package-specific.
+- WHM and cPanel state-changing actions require POST plus a short-lived nonce.
 - Cleanup is not automated.
 - WHMCS stores summaries and hints, not destructive cleanup commands.
 - WHMCS deploy/check/update/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
-- WHMCS update actions use the configured update manifest plus fallback release tarball URL and the cPanel-side backup-first installer/updater.
+- WHMCS SSH actions verify a configured SHA-256 host fingerprint before password authentication unless the explicit unsafe override is enabled.
+- WHMCS remote commands require a verified exit marker, have a hard read deadline, and cap captured output at 16 MiB.
+- Update apply and bootstrap deployment require HTTPS plus a manifest SHA-256 match before extraction.
 - WHMCS strips absolute scanner paths before storing support summary lists.
 - WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
 - JSON cache files should not be made web-accessible.
@@ -382,11 +399,13 @@ Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 
 - background scans via cron
 - bounded foreground refreshes
+- oldest-cache-first incremental rotation
 - shared scan locking
 - per-account cPanel refresh throttles
 - per-account JSON cache
 - atomic cache writes
 - explicit scan-complete flags
+- explicit remaining-account and full-scope-complete metadata
 - visible timestamps
 - top-N offender lists
 - WHMCS sync limits for staged rollout
@@ -480,6 +499,7 @@ Run scanner, security boundary, and branding/update contract smoke tests:
 ./tests/smoke_scanner.sh
 ./tests/security_boundaries.sh
 ./tests/branding_update_contract.sh
+./tests/request_security.sh
 ```
 
 Run syntax checks:

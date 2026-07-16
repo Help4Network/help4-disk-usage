@@ -12,27 +12,39 @@ my $CACHE_DIR = $ENV{HELP4_DU_CACHE_DIR} || '/var/cpanel/help4-disk-usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
 my $UPDATER = $ENV{HELP4_DU_UPDATER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update';
 my $CONFIG_FILE = $ENV{HELP4_DU_CONFIG} || File::Spec->catfile($CACHE_DIR, 'config.json');
-my %q = parse_query($ENV{QUERY_STRING} || '');
-my $auth_user = $ENV{REMOTE_USER} || $ENV{USER} || '';
-$auth_user =~ s/[^A-Za-z0-9_.-]//g;
+my %q = request_params();
+my $auth_user = $ENV{REMOTE_USER} || '';
+if ($auth_user !~ /\A[A-Za-z0-9_.-]+\z/) {
+    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAuthenticated WHM user is required.\n";
+    exit 0;
+}
 my $config = load_config();
 my $update_status;
 
 my $notice = '';
-my $is_root = $auth_user eq 'root' || $> == 0 && !$auth_user;
+my $is_root = $auth_user eq 'root';
 my %owned = map { $_ => 1 } owned_accounts($auth_user);
 $owned{$auth_user} = 1 if $auth_user && !$is_root;
+my $nonce = action_nonce($auth_user);
+my @action_keys = qw(save_settings update_check update_apply refresh);
+my $has_action = grep { $q{$_} } @action_keys;
+my $valid_action = ($ENV{REQUEST_METHOD} || 'GET') eq 'POST'
+    && valid_nonce($nonce, $q{action_nonce} || '');
 
-if ($q{save_settings} && $is_root) {
+if ($has_action && !$valid_action) {
+    $notice = 'Request rejected. Reload this page and try again.';
+} elsif ($q{save_settings} && !$is_root) {
+    $notice = 'Only root may change plugin settings.';
+} elsif ($q{save_settings} && $is_root) {
     $notice = save_settings(\%q, $config);
     $config = load_config();
-}
-
-if ($q{update_check} && $is_root) {
+} elsif ($q{update_check} && !$is_root) {
+    $notice = 'Only root may check the update channel.';
+} elsif ($q{update_check} && $is_root) {
     $update_status = run_update('check', $config);
-}
-
-if ($q{update_apply} && $is_root) {
+} elsif ($q{update_apply} && !$is_root) {
+    $notice = 'Only root may apply updates.';
+} elsif ($q{update_apply} && $is_root) {
     $update_status = run_update('apply', $config);
     if ($update_status->{ok} && ($update_status->{status} || '') eq 'updated') {
         $notice = 'Update applied to version ' . ($update_status->{installed_version} || 'unknown') . '. Backup: ' . ($update_status->{backup} || 'see install output');
@@ -41,9 +53,7 @@ if ($q{update_apply} && $is_root) {
     } else {
         $notice = 'Update failed: ' . ($update_status->{error} || 'unknown error');
     }
-}
-
-if ($q{refresh}) {
+} elsif ($q{refresh}) {
     my @cmd = ($SCANNER, '--write-cache', '--quiet', '--lock-dir', $config->{scan_lock_dir}, '--max-seconds', $config->{whm_scan_max_seconds});
     if ($q{account}) {
         my $account = clean_user($q{account});
@@ -60,7 +70,16 @@ if ($q{refresh}) {
     if (!$notice) {
         local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
         system(@cmd);
-        $notice = $? == 0 ? 'Scan refreshed. Review the timestamps below.' : 'Scan is already running or returned a non-zero status; existing cache is shown.';
+        if ($? == 0) {
+            my $latest = read_json_file(File::Spec->catfile($CACHE_DIR, 'latest.json')) || {};
+            my $processed = int($latest->{account_count} || 0);
+            my $remaining = int($latest->{accounts_remaining} || 0);
+            $notice = $remaining > 0
+                ? "Bounded scan processed $processed account(s); $remaining remain and will rotate forward on the next scan."
+                : 'Scan refreshed. Review the timestamps below.';
+        } else {
+            $notice = 'Scan is already running or returned a non-zero status; existing cache is shown.';
+        }
     }
 }
 
@@ -72,10 +91,10 @@ my @accounts = grep { allowed($_, $is_root, \%owned) } read_account_caches();
 } @accounts;
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
-print page(\@accounts, $notice, $auth_user, $is_root, $config, $update_status);
+print page(\@accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce);
 
 sub page {
-    my ($accounts, $notice, $auth_user, $is_root, $config, $update_status) = @_;
+    my ($accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce) = @_;
     my $total_bytes = 0;
     my $total_inodes = 0;
     my %sev;
@@ -86,12 +105,13 @@ sub page {
     }
     my $display_name = h($config->{display_name} || $APP);
     my $scope = $is_root ? 'Root view: all accounts' : 'Reseller view: owned accounts only';
-    my $rows = join '', map { account_row($_, $is_root) } @$accounts;
+    my $rows = join '', map { account_row($_, $is_root, $nonce) } @$accounts;
     $rows ||= '<tr><td colspan="8" class="muted">No scan cache exists yet. Run a refresh to collect data.</td></tr>';
-    my $refresh_all = $is_root ? '<a class="button" href="?refresh=1">Refresh all accounts</a>' : '<a class="button" href="?refresh=1">Refresh owned accounts</a>';
+    my $refresh_label = $is_root ? 'Refresh all accounts' : 'Refresh owned accounts';
+    my $refresh_all = action_form('refresh', $refresh_label, $nonce);
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
-    my $settings = $is_root ? settings_panel($config) : '';
-    my $updates = $is_root ? update_panel($config, $update_status) : '';
+    my $settings = $is_root ? settings_panel($config, $nonce) : '';
+    my $updates = $is_root ? update_panel($config, $update_status, $nonce) : '';
     return <<"HTML";
 <!doctype html>
 <html>
@@ -138,13 +158,14 @@ HTML
 }
 
 sub settings_panel {
-    my ($cfg) = @_;
+    my ($cfg, $nonce) = @_;
     my $overrides = JSON::PP->new->canonical->pretty->encode($cfg->{package_overrides} || {});
     return <<"HTML";
     <section>
       <h2>Scan Limits</h2>
-      <form method="get" class="settings-grid">
+      <form method="post" class="settings-grid">
         <input type="hidden" name="save_settings" value="1">
+        <input type="hidden" name="action_nonce" value="@{[h($nonce)]}">
         <label>WHM scan max seconds<input name="whm_scan_max_seconds" value="@{[h($cfg->{whm_scan_max_seconds})]}"></label>
         <label>cPanel refreshes per hour<input name="cpanel_refreshes_per_hour" value="@{[h($cfg->{cpanel_refreshes_per_hour})]}"></label>
         <label>cPanel min interval seconds<input name="cpanel_min_interval_seconds" value="@{[h($cfg->{cpanel_min_interval_seconds})]}"></label>
@@ -163,7 +184,7 @@ HTML
 }
 
 sub update_panel {
-    my ($cfg, $status) = @_;
+    my ($cfg, $status, $nonce) = @_;
     my $current = current_version();
     my $status_html = '<p class="muted">Click check to compare this server with the configured release tarball.</p>';
     if ($status) {
@@ -182,16 +203,16 @@ sub update_panel {
       <h2>Repository Updates</h2>
       $status_html
       <p class="muted">Updates read the configured manifest when available, download the selected release tarball, compare versions, run the normal backup-first installer, and preserve scan cache/config. Use this after publishing a new release or changing update channels.</p>
-      <p>
-        <a class="button" href="?update_check=1">Check for update</a>
-        <a class="button" href="?update_apply=1">Apply update</a>
-      </p>
+      <div class="actions">
+        @{[action_form('update_check', 'Check for update', $nonce)]}
+        @{[action_form('update_apply', 'Apply update', $nonce)]}
+      </div>
     </section>
 HTML
 }
 
 sub account_row {
-    my ($a, $is_root) = @_;
+    my ($a, $is_root, $nonce) = @_;
     my $issue = top_issue($a);
     my $home = $is_root ? '<div class="path">' . h($a->{home} || '') . '</div>' : '';
     return '<tr>' .
@@ -202,8 +223,21 @@ sub account_row {
         '<td>' . fmt_int($a->{inode_count} || 0) . '</td>' .
         '<td>' . h($a->{scanned_at} || 'never') . '</td>' .
         '<td>' . $issue . '</td>' .
-        '<td><a class="button small" href="?refresh=1&account=' . h($a->{user}) . '">Rescan</a></td>' .
+        '<td>' . action_form('refresh', 'Rescan', $nonce, $a->{user}) . '</td>' .
         '</tr>';
+}
+
+sub action_form {
+    my ($action, $label, $nonce, $account) = @_;
+    my $account_field = defined $account && $account ne ''
+        ? '<input type="hidden" name="account" value="' . h($account) . '">'
+        : '';
+    return '<form method="post" class="inline-form">'
+        . '<input type="hidden" name="' . h($action) . '" value="1">'
+        . '<input type="hidden" name="action_nonce" value="' . h($nonce) . '">'
+        . $account_field
+        . '<button class="button small" type="submit">' . h($label) . '</button>'
+        . '</form>';
 }
 
 sub top_issue {
@@ -247,7 +281,7 @@ sub default_config {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => 'Disk Usage Audit',
         credit_prefix                 => 'Built by',
-        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz',
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz',
         update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
@@ -265,10 +299,11 @@ sub load_config {
             $cfg->{$key} = $disk->{$key} if exists $disk->{$key};
         }
     }
-    $cfg->{scan_lock_dir} ||= File::Spec->catdir($CACHE_DIR, 'locks');
+    $cfg->{scan_lock_dir} = clean_lock_dir($cfg->{scan_lock_dir})
+        || File::Spec->catdir($CACHE_DIR, 'locks');
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
-    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz';
     $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
@@ -281,7 +316,7 @@ sub load_config {
 sub save_settings {
     my ($q, $current) = @_;
     my $cfg = {
-        scan_lock_dir                 => clean_abs_path($q->{scan_lock_dir}) || $current->{scan_lock_dir},
+        scan_lock_dir                 => clean_lock_dir($q->{scan_lock_dir}) || $current->{scan_lock_dir},
         display_name                  => clean_label($q->{display_name}, $current->{display_name}),
         credit_prefix                 => clean_label($q->{credit_prefix}, $current->{credit_prefix}),
         release_url                   => clean_url($q->{release_url}) || $current->{release_url},
@@ -353,12 +388,26 @@ sub clean_abs_path {
     return $path;
 }
 
+sub clean_lock_dir {
+    my ($path) = @_;
+    $path = clean_abs_path($path);
+    my $base = clean_abs_path($CACHE_DIR);
+    return '' unless $path && $base;
+    my $allowed = File::Spec->catdir($base, 'locks');
+    return $path if $path eq $allowed || index($path, "$allowed/") == 0;
+    return '';
+}
+
 sub clean_url {
     my ($url) = @_;
     return '' unless defined $url;
     $url =~ s/^\s+|\s+\z//g;
-    return $url if $url =~ m{\Ahttps?://[A-Za-z0-9._~:/?#\[\]\@!\$&'()*+,;=%-]+\z};
-    return '';
+    return '' unless $url =~ m{\Ahttps://[A-Za-z0-9._~:/?#\[\]\@!\$&'()*+,;=%-]+\z};
+    my $authority = $url;
+    $authority =~ s{\Ahttps://}{};
+    $authority =~ s{/.*\z}{};
+    return '' if !$authority || $authority =~ /\@/;
+    return $url;
 }
 
 sub clean_label {
@@ -423,6 +472,53 @@ sub owned_accounts {
         }
     }
     return @out;
+}
+
+sub request_params {
+    my %out = parse_query($ENV{QUERY_STRING} || '');
+    return %out unless ($ENV{REQUEST_METHOD} || 'GET') eq 'POST';
+    my $length = $ENV{CONTENT_LENGTH} || 0;
+    return %out unless $length =~ /\A\d+\z/ && $length > 0 && $length <= 131072;
+    my $body = '';
+    my $read = read(STDIN, $body, $length);
+    return %out unless defined $read && $read == $length;
+    my %post = parse_query($body);
+    @out{keys %post} = values %post;
+    return %out;
+}
+
+sub action_nonce {
+    my ($user) = @_;
+    my $dir = File::Spec->catdir($CACHE_DIR, 'nonces');
+    make_path($dir, { mode => 0700 }) unless -d $dir;
+    chmod 0700, $dir;
+    my $path = File::Spec->catfile($dir, "$user.json");
+    my $saved = read_json_file($path);
+    if ($saved && ref $saved eq 'HASH' && ($saved->{created_at} || 0) > time - 1800
+        && ($saved->{token} || '') =~ /\A[0-9a-f]{64}\z/) {
+        return $saved->{token};
+    }
+    my $random = '';
+    if (open my $fh, '<', '/dev/urandom') {
+        read($fh, $random, 32);
+        close $fh;
+    }
+    die "Unable to create action nonce\n" unless length($random) == 32;
+    my $token = unpack('H*', $random);
+    write_json_file($path, { token => $token, created_at => time })
+        or die "Unable to persist action nonce\n";
+    chmod 0600, $path;
+    return $token;
+}
+
+sub valid_nonce {
+    my ($expected, $provided) = @_;
+    return 0 unless defined $expected && defined $provided
+        && $expected =~ /\A[0-9a-f]{64}\z/ && $provided =~ /\A[0-9a-f]{64}\z/
+        && length($expected) == length($provided);
+    my $diff = 0;
+    $diff |= ord(substr($expected, $_, 1)) ^ ord(substr($provided, $_, 1)) for 0 .. length($expected) - 1;
+    return $diff == 0;
 }
 
 sub allowed {

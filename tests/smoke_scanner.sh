@@ -38,6 +38,23 @@ JSON_PAYLOAD="$json" perl -MJSON::PP=decode_json -e '
 test -s "$TMP_DIR/cache/accounts/alice.json"
 test -s "$TMP_DIR/cache/accounts/bob.json"
 
+mkdir -p "$TMP_DIR/fixture/charlie/public_html"
+printf 'new account' > "$TMP_DIR/fixture/charlie/public_html/index.txt"
+batch_json="$("$ROOT_DIR/src/bin/help4-disk-usage-scan" \
+  --fixture-root "$TMP_DIR/fixture" \
+  --cache-dir "$TMP_DIR/cache" \
+  --scope all \
+  --account-limit 1 \
+  --write-cache)"
+JSON_PAYLOAD="$batch_json" perl -MJSON::PP=decode_json -e '
+  my $d = decode_json($ENV{JSON_PAYLOAD});
+  die "missing account should rotate first\n" unless $d->{accounts}[0]{user} eq "charlie";
+  die "wrong scope account count\n" unless $d->{scope_account_count} == 3;
+  die "wrong planned account count\n" unless $d->{planned_account_count} == 1;
+  die "wrong remaining count\n" unless $d->{accounts_remaining} == 2;
+  die "limited scan must not claim full scope\n" if $d->{scope_complete};
+'
+
 account_json="$("$ROOT_DIR/src/bin/help4-disk-usage-scan" \
   --fixture-root "$TMP_DIR/fixture" \
   --cache-dir "$TMP_DIR/cache" \

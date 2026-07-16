@@ -6,8 +6,8 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.2.9';
-const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz';
+const H4DU_VERSION = '0.3.0';
+const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz';
 const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 
 function help4_disk_usage_config()
@@ -24,7 +24,7 @@ function help4_disk_usage_config()
                 'Type' => 'text',
                 'Size' => '90',
                 'Default' => H4DU_DEFAULT_RELEASE_URL,
-                'Description' => 'URL WHMCS will ask cPanel servers to download during SSH deployment.',
+                'Description' => 'Fallback package URL for update checks. Initial deployment uses the checksum-bearing update manifest.',
             ],
             'updateManifestUrl' => [
                 'FriendlyName' => 'Update Manifest URL',
@@ -39,6 +39,18 @@ function help4_disk_usage_config()
                 'Size' => '8',
                 'Default' => '22',
             ],
+            'sshHostFingerprints' => [
+                'FriendlyName' => 'SSH Host Fingerprints',
+                'Type' => 'textarea',
+                'Rows' => '6',
+                'Cols' => '90',
+                'Description' => 'Required by default. JSON object keyed by WHMCS server ID, hostname, or IP. Values are OpenSSH SHA256 fingerprints or SHA-256 hex.',
+            ],
+            'allowUnpinnedSsh' => [
+                'FriendlyName' => 'Allow Unpinned SSH',
+                'Type' => 'yesno',
+                'Description' => 'Unsafe compatibility override. Leave off so Check, Deploy, Update, and Sync fail closed when a server fingerprint is missing.',
+            ],
             'syncAccountLimit' => [
                 'FriendlyName' => 'Sync Account Limit',
                 'Type' => 'text',
@@ -47,7 +59,7 @@ function help4_disk_usage_config()
                 'Description' => '0 means scan all accounts. Use a small number during first rollout.',
             ],
             'scanMaxSeconds' => [
-                'FriendlyName' => 'Per-Account Scan Max Seconds',
+                'FriendlyName' => 'Whole Sync Scan Max Seconds',
                 'Type' => 'text',
                 'Size' => '8',
                 'Default' => '90',
@@ -172,8 +184,11 @@ function help4_disk_usage_output($vars)
     $postAction = $_POST['h4du_action'] ?? '';
     $message = null;
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        help4_disk_usage_check_token();
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+        if (!help4_disk_usage_check_token()) {
+            $message = ['status' => 'error', 'message' => 'WHMCS CSRF validation is unavailable; remote actions are disabled.'];
+            $postAction = '';
+        }
         $serverId = (int)($_POST['server_id'] ?? 0);
         if ($postAction === 'check_server') {
             $message = help4_disk_usage_check_server($serverId, $vars);
@@ -436,6 +451,9 @@ function help4_disk_usage_server_health($server, $state)
     if (($state->status ?? '') === 'update_available') {
         return ['status' => 'update_available', 'next_step' => 'Run Update to pull the configured release tarball.', 'scan_age' => help4_disk_usage_age($state->last_scan_at ?? null), 'sort' => 25];
     }
+    if (($state->status ?? '') === 'partial') {
+        return ['status' => 'attention', 'next_step' => 'Run Sync again; the bounded scan still has accounts pending.', 'scan_age' => help4_disk_usage_age($state->last_scan_at ?? null), 'sort' => 28];
+    }
     if (!$state->last_scan_at) {
         return ['status' => 'not_synced', 'next_step' => 'Run Sync to collect the first server scan.', 'scan_age' => 'never', 'sort' => 40];
     }
@@ -557,7 +575,18 @@ function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
     }
 
     $command = help4_disk_usage_command_for_action($action, $vars);
-    $result = help4_disk_usage_ssh_exec($server, $command, (int)($vars['sshPort'] ?? 22));
+    $scanMaxSeconds = min(600, max(15, (int)($vars['scanMaxSeconds'] ?? 90)));
+    $timeout = $action === 'sync' ? $scanMaxSeconds + 60 : 300;
+    $fingerprint = help4_disk_usage_expected_fingerprint($server, $vars['sshHostFingerprints'] ?? '');
+    $allowUnpinned = ($vars['allowUnpinnedSsh'] ?? '') === 'on';
+    $result = help4_disk_usage_ssh_exec(
+        $server,
+        $command,
+        (int)($vars['sshPort'] ?? 22),
+        $fingerprint,
+        $allowUnpinned,
+        $timeout
+    );
 
     if (!$result['ok']) {
         help4_disk_usage_record_server_state($server, 'error', null, $result['error']);
@@ -566,13 +595,29 @@ function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
     }
 
     if ($action === 'sync') {
-        $saved = help4_disk_usage_save_scan_json($server, $result['output']);
-        help4_disk_usage_event($serverId, $action, 'success', 'Synced ' . $saved['accounts'] . ' account scan records.', '');
-        return ['status' => 'success', 'message' => 'Synced ' . $saved['accounts'] . ' account scan records from ' . ($server->name ?: $server->hostname) . '.'];
+        try {
+            $saved = help4_disk_usage_save_scan_json($server, $result['output']);
+        } catch (Throwable $e) {
+            $error = 'Sync output was rejected: ' . $e->getMessage();
+            help4_disk_usage_record_server_state($server, 'error', null, $error);
+            help4_disk_usage_event($serverId, $action, 'error', $error, '');
+            return ['status' => 'error', 'message' => $error];
+        }
+        $message = 'Synced ' . $saved['accounts'] . ' account scan records from ' . ($server->name ?: $server->hostname)
+            . '; ' . $saved['tracked'] . ' accounts are now tracked.'
+            . ($saved['partial'] ? ' The bounded scan has accounts pending, so run Sync again.' : '');
+        help4_disk_usage_event($serverId, $action, 'success', $message, '');
+        return ['status' => 'success', 'message' => $message];
     }
 
     if ($action === 'check') {
         $check = help4_disk_usage_parse_update_json($result['output']);
+        if (empty($check['ok'])) {
+            $error = 'Check output was rejected: ' . ($check['error'] ?? 'invalid updater response');
+            help4_disk_usage_record_server_state($server, 'error', null, $error);
+            help4_disk_usage_event($serverId, $action, 'error', $error, '');
+            return ['status' => 'error', 'message' => $error];
+        }
         $status = $check['status'] ?? 'installed';
         help4_disk_usage_record_server_state($server, $status, [
             'plugin_version' => (string)($check['installed_version'] ?? ''),
@@ -585,6 +630,12 @@ function help4_disk_usage_server_ssh_action($serverId, $action, $vars)
 
     if ($action === 'update') {
         $update = help4_disk_usage_parse_update_json($result['output']);
+        if (empty($update['ok'])) {
+            $error = 'Update output was rejected: ' . ($update['error'] ?? 'invalid updater response');
+            help4_disk_usage_record_server_state($server, 'error', null, $error);
+            help4_disk_usage_event($serverId, $action, 'error', $error, '');
+            return ['status' => 'error', 'message' => $error];
+        }
         $status = (($update['status'] ?? '') === 'updated' || ($update['status'] ?? '') === 'current') ? 'installed' : ($update['status'] ?? 'installed');
         help4_disk_usage_record_server_state($server, $status, [
             'plugin_version' => (string)($update['installed_version'] ?? $update['available_version'] ?? ''),
@@ -614,7 +665,7 @@ function help4_disk_usage_command_for_action($action, $vars)
 
     if ($action === 'sync') {
         $limit = max(0, (int)($vars['syncAccountLimit'] ?? 0));
-        $maxSeconds = max(15, (int)($vars['scanMaxSeconds'] ?? 90));
+        $maxSeconds = min(600, max(15, (int)($vars['scanMaxSeconds'] ?? 90)));
         $limitArg = $limit > 0 ? ' --account-limit ' . $limit : '';
         return '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --max-seconds ' . $maxSeconds . ' --top 25 --write-cache --lock-dir /var/cpanel/help4-disk-usage/locks' . $limitArg;
     }
@@ -624,11 +675,20 @@ function help4_disk_usage_command_for_action($action, $vars)
 
 function help4_disk_usage_install_command($releaseUrl, $manifestUrl = H4DU_DEFAULT_UPDATE_MANIFEST_URL)
 {
-    $safeUrl = escapeshellarg($releaseUrl ?: H4DU_DEFAULT_RELEASE_URL);
     $safeManifestUrl = escapeshellarg($manifestUrl ?: H4DU_DEFAULT_UPDATE_MANIFEST_URL);
-    return 'set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; '
-        . 'cd "$tmp"; curl -fsSL -o help4-disk-usage.tar.gz ' . $safeUrl . '; '
-        . 'tar -xzf help4-disk-usage.tar.gz; cd help4-disk-usage-*; HELP4_DU_RELEASE_URL=' . $safeUrl . ' HELP4_DU_UPDATE_MANIFEST_URL=' . $safeManifestUrl . ' ./install.sh';
+    return 'set -euo pipefail; tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"; trap \'rm -rf "$tmp"\' EXIT; '
+        . 'manifest_url=' . $safeManifestUrl . '; case "$manifest_url" in https://*) ;; *) echo "manifest URL must use HTTPS" >&2; exit 64;; esac; '
+        . 'manifest_authority="${manifest_url#https://}"; manifest_authority="${manifest_authority%%/*}"; case "$manifest_authority" in ""|*@*) echo "manifest URL credentials are not allowed" >&2; exit 64;; esac; '
+        . 'curl -fsSL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2 --connect-timeout 15 --max-time 60 --max-filesize 1048576 -o "$tmp/update.json" "$manifest_url"; '
+        . 'package_url="$(perl -MJSON::PP -0777 -e \'my $d=decode_json(<>); print $d->{package_url} || ""\' "$tmp/update.json")"; '
+        . 'expected_sha="$(perl -MJSON::PP -0777 -e \'my $d=decode_json(<>); print lc($d->{sha256} || "")\' "$tmp/update.json")"; '
+        . 'case "$package_url" in https://*) ;; *) echo "package URL must use HTTPS" >&2; exit 65;; esac; package_authority="${package_url#https://}"; package_authority="${package_authority%%/*}"; case "$package_authority" in ""|*@*) echo "package URL credentials are not allowed" >&2; exit 65;; esac; '
+        . 'printf %s "$expected_sha" | grep -Eq \'^[0-9a-f]{64}$\' || { echo "manifest sha256 is missing or invalid" >&2; exit 66; }; '
+        . 'curl -fsSL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2 --connect-timeout 15 --max-time 120 --max-filesize 52428800 -o "$tmp/package.tar.gz" "$package_url"; '
+        . 'actual_sha="$(sha256sum "$tmp/package.tar.gz" | awk \'{print $1}\')"; test "$actual_sha" = "$expected_sha" || { echo "package sha256 mismatch" >&2; exit 67; }; '
+        . 'mkdir "$tmp/source"; tar --no-same-owner --no-same-permissions --strip-components=1 -xzf "$tmp/package.tar.gz" -C "$tmp/source"; '
+        . 'test -x "$tmp/source/install.sh" && test -f "$tmp/source/src/bin/help4-disk-usage-scan" || { echo "invalid Help4 Disk Usage package" >&2; exit 68; }; '
+        . 'HELP4_DU_RELEASE_URL="$package_url" HELP4_DU_UPDATE_MANIFEST_URL="$manifest_url" "$tmp/source/install.sh"';
 }
 
 function help4_disk_usage_update_command($releaseUrl, $manifestUrl, $apply)
@@ -664,7 +724,7 @@ function help4_disk_usage_parse_update_json($output)
             return $data;
         }
     }
-    return ['ok' => true, 'status' => 'installed', 'installed_version' => '', 'available_version' => '', 'raw' => substr((string)$output, 0, 500)];
+    return ['ok' => false, 'status' => 'error', 'error' => 'updater did not return valid JSON'];
 }
 
 function help4_disk_usage_check_message($server, $check)
@@ -696,14 +756,47 @@ function help4_disk_usage_update_message($server, $update)
     return 'Update command completed for ' . $name . ' with status ' . ($update['status'] ?? 'unknown') . '.';
 }
 
-function help4_disk_usage_ssh_exec($server, $command, $defaultPort)
+function help4_disk_usage_expected_fingerprint($server, $json)
+{
+    $map = json_decode((string)$json, true);
+    if (!is_array($map)) {
+        return '';
+    }
+    $keys = [
+        (string)$server->id,
+        (string)($server->hostname ?? ''),
+        (string)($server->ipaddress ?? ''),
+    ];
+    foreach ($keys as $key) {
+        if ($key !== '' && isset($map[$key]) && is_string($map[$key])) {
+            return trim($map[$key]);
+        }
+    }
+    return '';
+}
+
+function help4_disk_usage_fingerprint_matches($expected, $raw)
+{
+    if (!is_string($raw) || strlen($raw) !== 32) {
+        return false;
+    }
+    $expected = trim((string)$expected);
+    $openssh = 'SHA256:' . rtrim(base64_encode($raw), '=');
+    if (strpos($expected, 'SHA256:') === 0) {
+        return hash_equals($openssh, $expected);
+    }
+    $hex = strtolower(preg_replace('/[^0-9a-f]/i', '', $expected));
+    return strlen($hex) === 64 && hash_equals(bin2hex($raw), $hex);
+}
+
+function help4_disk_usage_ssh_exec($server, $command, $defaultPort, $expectedFingerprint = '', $allowUnpinned = false, $timeoutSeconds = 300)
 {
     if (!function_exists('ssh2_connect')) {
         return ['ok' => false, 'error' => 'PHP ssh2 extension is not installed. Use the manual deployment command or install ssh2 for one-click WHMCS deployment.', 'output' => ''];
     }
 
     $host = $server->hostname ?: $server->ipaddress;
-    $port = (int)($defaultPort ?: 22);
+    $port = min(65535, max(1, (int)($defaultPort ?: 22)));
     $user = $server->username ?: 'root';
     $password = help4_disk_usage_decrypt((string)$server->password);
 
@@ -716,19 +809,77 @@ function help4_disk_usage_ssh_exec($server, $command, $defaultPort)
         return ['ok' => false, 'error' => 'Unable to connect to ' . $host . ':' . $port . '.', 'output' => ''];
     }
 
+    if (!function_exists('ssh2_fingerprint') || !defined('SSH2_FINGERPRINT_SHA256') || !defined('SSH2_FINGERPRINT_RAW')) {
+        return ['ok' => false, 'error' => 'PHP ssh2 cannot provide a SHA-256 host fingerprint; remote actions are blocked.', 'output' => ''];
+    }
+    $rawFingerprint = @ssh2_fingerprint($conn, SSH2_FINGERPRINT_SHA256 | SSH2_FINGERPRINT_RAW);
+    $displayFingerprint = is_string($rawFingerprint) && strlen($rawFingerprint) === 32
+        ? 'SHA256:' . rtrim(base64_encode($rawFingerprint), '=')
+        : 'unavailable';
+    if ($expectedFingerprint === '' && !$allowUnpinned) {
+        return [
+            'ok' => false,
+            'error' => 'SSH host fingerprint is not configured for this server. Verify it out of band, then add ' . $displayFingerprint . ' to the module fingerprint map.',
+            'output' => '',
+        ];
+    }
+    if ($expectedFingerprint !== '' && !help4_disk_usage_fingerprint_matches($expectedFingerprint, $rawFingerprint)) {
+        return ['ok' => false, 'error' => 'SSH host fingerprint mismatch for ' . $host . '. Remote action was blocked before authentication.', 'output' => ''];
+    }
+
     if (!@ssh2_auth_password($conn, $user, $password)) {
         return ['ok' => false, 'error' => 'SSH authentication failed for ' . $user . '@' . $host . '.', 'output' => ''];
     }
 
-    $stream = @ssh2_exec($conn, $command . ' 2>&1');
+    try {
+        $marker = '__H4DU_EXIT_' . bin2hex(random_bytes(12)) . '__';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => 'Unable to create a remote execution marker.', 'output' => ''];
+    }
+    $payload = 'set +e; ( ' . $command . ' ); rc=$?; printf "\\n' . $marker . ':%s\\n" "$rc"';
+    $wrappedCommand = 'bash -lc ' . escapeshellarg($payload);
+    $stream = @ssh2_exec($conn, $wrappedCommand . ' 2>&1');
     if (!$stream) {
         return ['ok' => false, 'error' => 'Unable to execute remote command.', 'output' => ''];
     }
 
-    stream_set_blocking($stream, true);
-    $output = stream_get_contents($stream);
+    stream_set_blocking($stream, false);
+    $timeoutSeconds = min(900, max(30, (int)$timeoutSeconds));
+    $deadline = microtime(true) + $timeoutSeconds;
+    $output = '';
+    while (!feof($stream)) {
+        if (microtime(true) >= $deadline) {
+            fclose($stream);
+            return ['ok' => false, 'error' => 'Remote command exceeded the ' . $timeoutSeconds . ' second safety limit.', 'output' => substr($output, -2000)];
+        }
+        $chunk = fread($stream, 8192);
+        if ($chunk === false) {
+            fclose($stream);
+            return ['ok' => false, 'error' => 'Unable to read remote command output.', 'output' => $output];
+        }
+        if ($chunk !== '') {
+            $output .= $chunk;
+            if (strlen($output) > 16777216) {
+                fclose($stream);
+                return ['ok' => false, 'error' => 'Remote command output exceeded the 16 MiB safety limit.', 'output' => substr($output, -2000)];
+            }
+        } else {
+            usleep(100000);
+        }
+    }
     fclose($stream);
-    return ['ok' => true, 'output' => trim((string)$output)];
+    $pattern = '/(?:\r?\n)' . preg_quote($marker, '/') . ':(\d+)(?:\r?\n)?\z/';
+    if (!preg_match($pattern, $output, $matches)) {
+        return ['ok' => false, 'error' => 'Remote command ended without a verified exit status.', 'output' => trim((string)$output)];
+    }
+    $exitStatus = (int)$matches[1];
+    $output = preg_replace($pattern, '', $output);
+    $output = trim((string)$output);
+    if ($exitStatus !== 0) {
+        $tail = preg_replace('/[\x00-\x1F\x7F]+/', ' ', substr($output, -500));
+        return ['ok' => false, 'error' => 'Remote command failed with exit status ' . $exitStatus . ($tail ? ': ' . $tail : '.'), 'output' => $output];
+    }
+    return ['ok' => true, 'output' => $output];
 }
 
 function help4_disk_usage_decrypt($value)
@@ -737,9 +888,13 @@ function help4_disk_usage_decrypt($value)
         return '';
     }
     if (function_exists('decrypt')) {
-        return (string)decrypt($value);
+        try {
+            return (string)decrypt($value);
+        } catch (Throwable $e) {
+            return '';
+        }
     }
-    return $value;
+    return '';
 }
 
 function help4_disk_usage_save_scan_json($server, $json)
@@ -784,21 +939,30 @@ function help4_disk_usage_save_scan_json($server, $json)
         $saved++;
     }
 
-    help4_disk_usage_record_server_state($server, 'synced', [
+    $total = Capsule::table('mod_help4_disk_usage_accounts')->where('whmcs_server_id', (int)$server->id)->count();
+    $totalBad = Capsule::table('mod_help4_disk_usage_accounts')->where('whmcs_server_id', (int)$server->id)->where('severity', 'bad')->count();
+    $totalCheck = Capsule::table('mod_help4_disk_usage_accounts')->where('whmcs_server_id', (int)$server->id)->where('severity', 'check')->count();
+    $syncStatus = !empty($data['scope_complete']) ? 'synced' : 'partial';
+
+    help4_disk_usage_record_server_state($server, $syncStatus, [
         'last_scan_at' => help4_disk_usage_mysql_datetime($data['generated_at'] ?? null),
         'plugin_version' => (string)($data['version'] ?? ''),
-        'account_count' => $saved,
-        'bad_count' => $bad,
-        'check_count' => $check,
+        'account_count' => $total,
+        'bad_count' => $totalBad,
+        'check_count' => $totalCheck,
         'raw_summary' => json_encode([
             'host' => $data['host'] ?? '',
             'version' => $data['version'] ?? '',
             'generated_at' => $data['generated_at'] ?? '',
             'settings' => $data['settings'] ?? [],
+            'scope_complete' => !empty($data['scope_complete']),
+            'scope_account_count' => (int)($data['scope_account_count'] ?? $saved),
+            'accounts_remaining' => (int)($data['accounts_remaining'] ?? 0),
+            'batch_account_count' => $saved,
         ]),
     ], null);
 
-    return ['accounts' => $saved, 'bad' => $bad, 'check' => $check];
+    return ['accounts' => $saved, 'tracked' => $total, 'bad' => $totalBad, 'check' => $totalCheck, 'partial' => $syncStatus === 'partial'];
 }
 
 function help4_disk_usage_find_service($serverId, $username)
@@ -892,8 +1056,8 @@ function help4_disk_usage_event($serverId, $type, $status, $message, $details)
         'whmcs_server_id' => $serverId ?: null,
         'event_type' => $type,
         'status' => $status,
-        'message' => $message,
-        'details' => $details,
+        'message' => substr((string)$message, 0, 60000),
+        'details' => substr((string)$details, 0, 60000),
         'created_at' => date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s'),
     ]);
@@ -979,9 +1143,11 @@ function help4_disk_usage_token_field()
 
 function help4_disk_usage_check_token()
 {
-    if (function_exists('check_token')) {
-        check_token('WHMCS.admin.default');
+    if (!function_exists('check_token')) {
+        return false;
     }
+    check_token('WHMCS.admin.default');
+    return true;
 }
 
 function help4_disk_usage_mysql_datetime($value)

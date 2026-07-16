@@ -10,17 +10,19 @@ Use this guide when pushing Help4 Disk Usage from the public repo to managed cPa
 
 ## Recommended Flow
 
-1. Push code to GitHub.
+1. Commit and push the release code.
 2. Let CI pass.
-3. Build the release tarball with `./scripts/package.sh`.
-4. On each target server, run:
+3. Tag the immutable release, for example `v0.3.0`, and push the tag.
+4. Download the exact tag archive, calculate its SHA-256, and publish that digest in `update.json` on the release channel.
+5. Confirm `update.json` uses the tag archive URL, not a moving branch archive.
+6. On each target server, run:
 
    ```bash
    /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --check
    /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --apply
    ```
 
-5. Confirm:
+7. Confirm:
    - updater reports `current`
    - WHM page renders
    - cPanel account page renders
@@ -34,10 +36,14 @@ For servers that do not have the updater yet:
 set -euo pipefail
 tmp="$(mktemp -d /root/help4-disk-usage.XXXXXX)"
 cd "$tmp"
-curl -fsSL -o help4-disk-usage.tar.gz "https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz"
+curl -fsSL -o update.json "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
+package_url="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{package_url}' update.json)"
+curl -fsSL -o help4-disk-usage.tar.gz "$package_url"
+expected="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{sha256}' update.json)"
+printf '%s  %s\n' "$expected" help4-disk-usage.tar.gz | sha256sum -c -
 tar -xzf help4-disk-usage.tar.gz
 cd help4-disk-usage-*
-HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz" \
+HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz" \
 HELP4_DU_UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json" \
 ./install.sh
 ```
@@ -46,7 +52,7 @@ The installer snapshots existing plugin files before replacing them.
 
 ## Production Update Channel
 
-The default update manifest points to repository `update.json`, which is useful during active development. For production, set the WHM/WHMCS update manifest URL to a reviewed JSON manifest and set its `package_url` to an immutable GitHub Release tarball so every target receives the same reviewed artifact.
+The default update manifest points to repository `update.json`. Its `package_url` must be an immutable tag/release archive and its `sha256` must match the downloaded bytes. The updater refuses apply operations when the digest is missing or mismatched.
 
 ## Skips
 

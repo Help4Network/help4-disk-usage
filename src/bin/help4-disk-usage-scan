@@ -8,8 +8,9 @@ use Cwd qw(abs_path);
 use Fcntl qw(:flock);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
+use Sys::Hostname qw(hostname);
 
-our $VERSION = '0.2.9';
+our $VERSION = '0.3.0';
 
 my %opt = (
     scope          => 'all',
@@ -57,6 +58,11 @@ die "--scope must be all, account, or owner\n" unless $opt{scope} =~ /\A(?:all|a
 die "--account is required for --scope account\n" if $opt{scope} eq 'account' && $opt{account} eq '';
 die "--owner is required for --scope owner\n" if $opt{scope} eq 'owner' && $opt{owner} eq '';
 die "--home must be an absolute path when provided\n" if $opt{home} ne '' && $opt{home} !~ m{\A/};
+$opt{max_seconds} = bounded_int($opt{max_seconds}, 5, 3600, 90);
+$opt{account_limit} = bounded_int($opt{account_limit}, 0, 100_000, 0);
+$opt{top} = bounded_int($opt{top}, 1, 100, 25);
+$opt{large_mb} = bounded_int($opt{large_mb}, 1, 1_000_000, 100);
+$opt{stale_days} = bounded_int($opt{stale_days}, 1, 36500, 180);
 $opt{lock_dir} ||= $opt{cache_dir};
 die "--lock-dir must be an absolute path when provided\n" if $opt{lock_dir} ne '' && $opt{lock_dir} !~ m{\A/};
 enforce_unprivileged_scope();
@@ -75,14 +81,26 @@ if ($opt{write_cache}) {
 
 my @discovered_accounts = discover_accounts();
 my @accounts = select_accounts(\@discovered_accounts, \%opt);
+@accounts = order_accounts_for_scan(@accounts);
+my $scope_account_count = scalar @accounts;
 if ($opt{account_limit} && @accounts > $opt{account_limit}) {
     @accounts = @accounts[0 .. $opt{account_limit} - 1];
 }
+my $planned_account_count = scalar @accounts;
 
 my @results;
+my $run_deadline = $started + $opt{max_seconds};
 for my $acct (@accounts) {
-    push @results, scan_account($acct, \%opt);
+    last if time >= $run_deadline;
+    my %account_opt = %opt;
+    $account_opt{max_seconds} = $run_deadline - time;
+    $account_opt{max_seconds} = 1 if $account_opt{max_seconds} < 1;
+    push @results, scan_account($acct, \%account_opt);
 }
+my $batch_complete = @results == $planned_account_count
+    && !grep { !$_->{scan_complete} } @results;
+my $scope_complete = $batch_complete && $planned_account_count == $scope_account_count;
+my $completed_account_count = grep { $_->{scan_complete} } @results;
 
 my $report = {
     app                 => 'Help4 Disk Usage',
@@ -96,6 +114,12 @@ my $report = {
     host                => safe_hostname(),
     scope               => $opt{scope},
     account_count       => scalar @results,
+    completed_account_count => $completed_account_count,
+    scope_account_count => $scope_account_count,
+    planned_account_count => $planned_account_count,
+    accounts_remaining  => $scope_account_count - $completed_account_count,
+    scan_complete       => $batch_complete ? JSON::PP::true : JSON::PP::false,
+    scope_complete      => $scope_complete ? JSON::PP::true : JSON::PP::false,
     settings            => {
         top         => int($opt{top}),
         large_mb    => int($opt{large_mb}),
@@ -127,8 +151,17 @@ Environment:
   HELP4_DU_CACHE_DIR=/var/cpanel/help4-disk-usage
   HELP4_DU_LOCK_DIR=/var/cpanel/help4-disk-usage/locks
   HELP4_DU_FIXTURE_ROOT=/tmp/fixture
-  HELP4_DU_MAX_SECONDS=90
+  HELP4_DU_MAX_SECONDS=90  # whole-run budget, not a per-account budget
 USAGE
+}
+
+sub bounded_int {
+    my ($value, $min, $max, $default) = @_;
+    $value = $default unless defined $value && $value =~ /\A\d+\z/;
+    $value = int($value);
+    $value = $min if $value < $min;
+    $value = $max if $value > $max;
+    return $value;
 }
 
 sub discover_accounts {
@@ -198,6 +231,20 @@ sub select_accounts {
     return @selected;
 }
 
+sub order_accounts_for_scan {
+    return sort {
+        account_cache_mtime($a->{user}) <=> account_cache_mtime($b->{user})
+            || $a->{user} cmp $b->{user}
+    } @_;
+}
+
+sub account_cache_mtime {
+    my ($user) = @_;
+    return 0 unless defined $user && $user =~ /\A[A-Za-z0-9_.-]+\z/;
+    my @st = stat(File::Spec->catfile($cache_accounts_dir, "$user.json"));
+    return @st ? int($st[9] || 0) : 0;
+}
+
 sub scan_account {
     my ($acct, $opt_ref) = @_;
     my $started = time;
@@ -255,8 +302,8 @@ sub scan_account {
                 }
             },
         }, $home);
-        alarm 0;
     };
+    alarm 0;
     if ($@) {
         $truncated = 1 if $@ =~ /SCAN_TIMEOUT/;
         $errors++ unless $@ =~ /SCAN_TIMEOUT/;
@@ -478,6 +525,7 @@ sub iso_time {
 }
 
 sub safe_hostname {
-    chomp(my $host = `hostname -f 2>/dev/null || hostname 2>/dev/null`);
+    my $host = eval { hostname() } || '';
+    $host =~ s/[^A-Za-z0-9_.:-]//g;
     return $host || 'unknown';
 }

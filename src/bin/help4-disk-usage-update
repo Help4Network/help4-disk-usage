@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/heads/main.tar.gz"
+DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
@@ -14,6 +14,7 @@ FORCE=0
 RELEASE_URL="${HELP4_DU_RELEASE_URL:-}"
 MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-}"
 RELEASE_NOTES_URL=""
+EXPECTED_SHA256=""
 
 usage() {
   cat <<USAGE
@@ -25,7 +26,7 @@ Usage:
 
 Output is JSON so WHM and WHMCS can report installed/available versions.
 When a manifest URL is configured, it should return JSON with at least:
-  {"version":"0.2.9","package_url":"https://example/package.tar.gz"}
+  {"version":"0.3.0","package_url":"https://example/package.tar.gz","sha256":"..."}
 USAGE
 }
 
@@ -75,15 +76,20 @@ RELEASE_URL="${RELEASE_URL:-$DEFAULT_RELEASE_URL}"
 MANIFEST_URL="${MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
 
 validate_url() {
-  local name="$1" value="$2"
+  local name="$1" value="$2" authority
   case "$value" in
-    https://*|http://*) return 0 ;;
-    "") return 0 ;;
-    *)
-      NAME="$name" perl -MJSON::PP -e 'print encode_json({ok=>JSON::PP::false,status=>"error",error=>$ENV{NAME} . " must be http or https"}), "\n"'
-      exit 2
+    https://*)
+      authority="${value#https://}"
+      authority="${authority%%/*}"
+      case "$authority" in
+        ""|*@*) ;;
+        *) return 0 ;;
+      esac
       ;;
+    "") return 0 ;;
   esac
+  NAME="$name" perl -MJSON::PP -e 'print encode_json({ok=>JSON::PP::false,status=>"error",error=>$ENV{NAME} . " must be HTTPS and must not contain URL credentials"}), "\n"'
+  exit 2
 }
 
 validate_url release_url "$RELEASE_URL"
@@ -95,7 +101,7 @@ json_string() {
 
 json_response() {
   local ok="$1" status="$2" current="$3" available="$4" error="$5" backup="${6:-}" changed="${7:-false}"
-  OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" MANIFEST_URL="$MANIFEST_URL" RELEASE_NOTES_URL="$RELEASE_NOTES_URL" \
+  OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" MANIFEST_URL="$MANIFEST_URL" RELEASE_NOTES_URL="$RELEASE_NOTES_URL" PACKAGE_SHA256="$EXPECTED_SHA256" \
     UPDATE_AVAILABLE="$([ "$status" = "update_available" ] && echo true || echo false)" \
     CHANGED="$changed" ERROR="$error" BACKUP="$backup" \
     perl -MJSON::PP -e '
@@ -113,6 +119,7 @@ json_response() {
     $out{error} = $ENV{ERROR} if length $ENV{ERROR};
     $out{backup} = $ENV{BACKUP} if length $ENV{BACKUP};
     $out{release_notes_url} = $ENV{RELEASE_NOTES_URL} if length $ENV{RELEASE_NOTES_URL};
+    $out{package_sha256} = $ENV{PACKAGE_SHA256} if length $ENV{PACKAGE_SHA256};
     print encode_json(\%out), "\n";
   '
 }
@@ -153,16 +160,21 @@ trap cleanup EXIT
 ARCHIVE="$TMP/help4-disk-usage.tar.gz"
 if [ -n "$MANIFEST_URL" ]; then
   MANIFEST="$TMP/update.json"
-  if curl -fsSL --connect-timeout 15 --max-time 60 -o "$MANIFEST" "$MANIFEST_URL"; then
+  if curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 60 --max-filesize 1048576 -o "$MANIFEST" "$MANIFEST_URL"; then
     manifest_values="$(perl -MJSON::PP -0777 -e '
       my $d = eval { decode_json(<>)} || {};
-      print join "\n", map { $d->{$_} || "" } qw(version package_url release_notes_url);
+      print join "\n", map { $d->{$_} || "" } qw(version package_url release_notes_url sha256);
     ' "$MANIFEST")"
     AVAILABLE_FROM_MANIFEST="$(printf '%s\n' "$manifest_values" | sed -n '1p')"
     RELEASE_FROM_MANIFEST="$(printf '%s\n' "$manifest_values" | sed -n '2p')"
     RELEASE_NOTES_URL="$(printf '%s\n' "$manifest_values" | sed -n '3p')"
+    EXPECTED_SHA256="$(printf '%s\n' "$manifest_values" | sed -n '4p' | tr 'A-F' 'a-f')"
     validate_url package_url "$RELEASE_FROM_MANIFEST"
     validate_url release_notes_url "$RELEASE_NOTES_URL"
+    if [ -n "$EXPECTED_SHA256" ] && ! printf '%s' "$EXPECTED_SHA256" | grep -Eq '^[0-9a-f]{64}$'; then
+      json_response false error "$(installed_version)" "$AVAILABLE_FROM_MANIFEST" "update manifest sha256 must be 64 hexadecimal characters"
+      exit 3
+    fi
     if [ -n "$RELEASE_FROM_MANIFEST" ]; then
       RELEASE_URL="$RELEASE_FROM_MANIFEST"
     fi
@@ -172,9 +184,72 @@ if [ -n "$MANIFEST_URL" ]; then
   fi
 fi
 
-if ! curl -fsSL --connect-timeout 15 --max-time 120 -o "$ARCHIVE" "$RELEASE_URL"; then
+CURRENT="$(installed_version)"
+AVAILABLE="${AVAILABLE_FROM_MANIFEST:-}"
+if [ -n "$AVAILABLE" ]; then
+  if [ -z "$CURRENT" ]; then
+    STATUS="not_installed"
+  elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ]; then
+    STATUS="update_available"
+  else
+    STATUS="current"
+  fi
+  if [ "$MODE" = "check" ]; then
+    json_response true "$STATUS" "$CURRENT" "$AVAILABLE" ""
+    exit 0
+  fi
+  if [ "$STATUS" = "current" ] && [ "$FORCE" -ne 1 ]; then
+    json_response true current "$CURRENT" "$AVAILABLE" ""
+    exit 0
+  fi
+fi
+
+if [ "$MODE" = "apply" ] && [ -z "$EXPECTED_SHA256" ]; then
+  json_response false error "$CURRENT" "$AVAILABLE" "update manifest must provide sha256 before an update can be applied"
+  exit 3
+fi
+
+if ! curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 --max-filesize 52428800 -o "$ARCHIVE" "$RELEASE_URL"; then
   json_response false error "$(installed_version)" "" "unable to download release tarball"
   exit 3
+fi
+ACTUAL_SHA256="$(sha256sum "$ARCHIVE" 2>/dev/null | awk '{print $1}')"
+if [ -z "$ACTUAL_SHA256" ]; then
+  ACTUAL_SHA256="$(shasum -a 256 "$ARCHIVE" 2>/dev/null | awk '{print $1}')"
+fi
+if [ -z "$ACTUAL_SHA256" ]; then
+  json_response false error "$CURRENT" "$AVAILABLE" "unable to calculate release tarball sha256"
+  exit 4
+fi
+if [ -n "$EXPECTED_SHA256" ] && [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+  json_response false error "$CURRENT" "$AVAILABLE" "release tarball sha256 does not match update manifest"
+  exit 4
+fi
+
+ENTRY_LIST="$TMP/archive-entries.txt"
+if ! tar -tzf "$ARCHIVE" > "$ENTRY_LIST"; then
+  json_response false error "$CURRENT" "$AVAILABLE" "unable to inspect release tarball"
+  exit 4
+fi
+if ! perl -e '
+  my $top = "";
+  my $count = 0;
+  while (<>) {
+    chomp;
+    die "unsafe archive path\n" if m{\A/} || m{(?:\A|/)\.\.(?:/|\z)};
+    my ($first) = split m{/}, $_, 2;
+    die "multiple archive roots\n" if length($top) && $first ne $top;
+    $top ||= $first;
+    die "too many archive entries\n" if ++$count > 5000;
+  }
+  die "empty archive\n" unless length($top);
+' "$ENTRY_LIST"; then
+  json_response false error "$CURRENT" "$AVAILABLE" "release tarball contains unsafe paths or too many files"
+  exit 4
+fi
+if tar -tvzf "$ARCHIVE" | awk 'substr($1,1,1) != "-" && substr($1,1,1) != "d" { found=1 } END { exit found ? 0 : 1 }'; then
+  json_response false error "$CURRENT" "$AVAILABLE" "release tarball contains links or special files"
+  exit 4
 fi
 if ! tar -xzf "$ARCHIVE" -C "$TMP"; then
   json_response false error "$(installed_version)" "" "unable to extract release tarball"
@@ -187,9 +262,12 @@ if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/src/bin/help4-disk-usage-scan" ] || [ !
   exit 5
 fi
 
-CURRENT="$(installed_version)"
-AVAILABLE="${AVAILABLE_FROM_MANIFEST:-}"
-AVAILABLE="${AVAILABLE:-$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$SRC_DIR/src/bin/help4-disk-usage-scan" | head -n 1)}"
+PACKAGE_VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$SRC_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
+if [ -n "$AVAILABLE_FROM_MANIFEST" ] && [ "$PACKAGE_VERSION" != "$AVAILABLE_FROM_MANIFEST" ]; then
+  json_response false error "$CURRENT" "$AVAILABLE_FROM_MANIFEST" "release package version does not match update manifest"
+  exit 6
+fi
+AVAILABLE="${AVAILABLE:-$PACKAGE_VERSION}"
 if [ -z "$AVAILABLE" ]; then
   json_response false error "$CURRENT" "" "unable to determine available version"
   exit 6
@@ -213,12 +291,13 @@ if [ "$STATUS" = "current" ] && [ "$FORCE" -ne 1 ]; then
   exit 0
 fi
 
-HELP4_DU_RELEASE_URL="$RELEASE_URL" "$SRC_DIR/install.sh" >/tmp/help4-disk-usage-update-install.log 2>&1 || {
-  err="$(tail -n 20 /tmp/help4-disk-usage-update-install.log | tr '\n' ' ' | cut -c1-500)"
+INSTALL_LOG="$TMP/install.log"
+HELP4_DU_RELEASE_URL="$RELEASE_URL" "$SRC_DIR/install.sh" >"$INSTALL_LOG" 2>&1 || {
+  err="$(tail -n 20 "$INSTALL_LOG" | tr '\n' ' ' | cut -c1-500)"
   json_response false error "$CURRENT" "$AVAILABLE" "install failed: $err"
   exit 7
 }
 
 NEW_CURRENT="$(installed_version)"
-BACKUP="$(sed -n 's/^Backup\/snapshot: //p' /tmp/help4-disk-usage-update-install.log | tail -n 1)"
+BACKUP="$(sed -n 's/^Backup\/snapshot: //p' "$INSTALL_LOG" | tail -n 1)"
 json_response true updated "$NEW_CURRENT" "$AVAILABLE" "" "$BACKUP" true

@@ -54,18 +54,23 @@ Required:
 - WHMCS server record with host/IP, SSH user, SSH port, and decryptable password.
 - Network path from WHMCS to the cPanel server over SSH.
 - Root or sufficiently privileged account on the cPanel server.
+- A verified SSH host fingerprint in the addon configuration.
 
 If any of these are missing, use the manual deployment command shown by the addon.
 
 The addon uses the addon setting **Default SSH Port** for SSH connections. It intentionally does not use the WHMCS server record port because cPanel server records commonly store WHM/API port `2087`.
 
+Enter **SSH Host Fingerprints** as a JSON object keyed by WHMCS server ID, hostname, or IP. Values may use OpenSSH `SHA256:...` format or 64-character SHA-256 hex. Remote actions connect only far enough to read the negotiated host key, verify the pin, and then authenticate. Leave **Allow Unpinned SSH** off.
+
+The first blocked action reports the negotiated fingerprint. Verify it independently from the server console before adding it. The health widget is visible only to WHMCS administrators with the `Perform Server Operations` permission.
+
 ## Updates from Manifest or Release Tarball
 
 WHMCS **Check** asks the cPanel server to run `help4-disk-usage-update --check` when the updater is installed. It stores installed and available versions in the WHMCS server health row.
 
-WHMCS **Update** asks the cPanel server to run `help4-disk-usage-update --apply`. Older installs that do not have the updater yet fall back to the normal backup-first installer command. The update manifest URL comes from **Update Manifest URL** and the fallback package URL comes from **Release Tarball URL**.
+WHMCS **Update** asks the cPanel server to run `help4-disk-usage-update --apply`. Older installs that do not have the updater yet fall back to a bootstrap installer that reads the manifest, verifies the package SHA-256, and then runs the normal backup-first installer. The update manifest URL comes from **Update Manifest URL** and the fallback package URL comes from **Release Tarball URL**.
 
-For production release management, point **Update Manifest URL** at a reviewed JSON manifest whose `package_url` is an immutable GitHub Release asset. For live development, it can point at the repository `update.json`, which may reference the public `main.tar.gz` archive.
+For production release management, point **Update Manifest URL** at a reviewed JSON manifest whose `package_url` is an immutable tag/release artifact and whose `sha256` matches that artifact. Update/deploy URLs must use HTTPS without embedded credentials.
 
 ## Data Mapping
 
@@ -104,5 +109,8 @@ Deactivation retains the tables so support history is preserved.
 - WHMCS does not show unmapped account data to clients.
 - Deploy/check/update/sync actions are limited to cPanel/WHM-like WHMCS server records.
 - Disabled WHMCS server records are rejected before SSH actions run.
+- Host-key mismatches and missing pins fail before password authentication.
+- Remote commands have an absolute read deadline, a 16 MiB output cap, and a verified exit-status marker.
+- Deployment packages must match the manifest SHA-256 before extraction.
 - Client reports use summarized findings and remediation hints.
 - Admins should review server credentials and SSH trust boundaries before enabling one-click deployment.

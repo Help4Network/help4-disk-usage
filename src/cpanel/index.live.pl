@@ -3,27 +3,49 @@ use strict;
 use warnings;
 use File::Path qw(make_path);
 use File::Spec;
+use Fcntl qw(:flock);
 use JSON::PP qw(decode_json);
 
 my $APP = 'Help4 Disk Usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
 my $GLOBAL_CONFIG = $ENV{HELP4_DU_CONFIG} || '/var/cpanel/help4-disk-usage/config.json';
-my %q = parse_query($ENV{QUERY_STRING} || '');
-my $user = $ENV{REMOTE_USER} || $ENV{CPANEL_USER} || $ENV{USER} || getpwuid($<) || '';
-$user =~ s/[^A-Za-z0-9_.-]//g;
-my $euid_user = getpwuid($<) || '';
-if ($euid_user && $euid_user !~ /\A(?:root|cpanel|nobody)\z/ && $euid_user =~ /\A[A-Za-z0-9_.-]+\z/) {
-    $user = $euid_user;
+my %q = request_params();
+my $remote_user = $ENV{REMOTE_USER} || $ENV{CPANEL_USER} || '';
+if ($remote_user ne '' && $remote_user !~ /\A[A-Za-z0-9_.-]+\z/) {
+    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nInvalid authenticated account identity.\n";
+    exit 0;
+}
+my $euid_user = getpwuid($>) || getpwuid($<) || '';
+$euid_user = '' unless $euid_user =~ /\A[A-Za-z0-9_.-]+\z/;
+my $runtime_account = $euid_user && $euid_user !~ /\A(?:root|cpanel|nobody)\z/ ? $euid_user : '';
+if ($remote_user && $runtime_account && $remote_user ne $runtime_account) {
+    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAccount identity mismatch.\n";
+    exit 0;
+}
+my $user = $runtime_account || $remote_user;
+if (!$user || $user =~ /\A(?:root|cpanel|nobody)\z/) {
+    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAuthenticated cPanel account is required.\n";
+    exit 0;
 }
 my $passwd_home = $user ? (getpwnam($user))[7] : '';
-my $home = $passwd_home || $ENV{HOME} || '';
-my $cache_dir = File::Spec->catdir($home || '/tmp', '.cpanel', 'help4-disk-usage');
+my $home = $passwd_home || '';
+if (!$home || !-d $home) {
+    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nUnable to resolve the authenticated account home.\n";
+    exit 0;
+}
+my $cache_dir = $ENV{HELP4_DU_ACCOUNT_CACHE_DIR}
+    || File::Spec->catdir($home, '.cpanel', 'help4-disk-usage');
 my $account_cache = File::Spec->catfile($cache_dir, 'accounts', "$user.json");
+make_path($cache_dir, { mode => 0700 }) unless -d $cache_dir;
+chmod 0700, $cache_dir;
 my $config = load_config();
 my $limits = limits_for_user($user, $config);
 my $notice = '';
+my $nonce = action_nonce($cache_dir);
 
-if ($q{refresh} && $user && $home && -d $home) {
+if ($q{refresh} && (($ENV{REQUEST_METHOD} || 'GET') ne 'POST' || !valid_nonce($nonce, $q{action_nonce} || ''))) {
+    $notice = 'Request rejected. Reload this page and try again.';
+} elsif ($q{refresh}) {
     make_path(File::Spec->catdir($cache_dir, 'accounts'), { mode => 0700 });
     my ($allowed, $message) = allow_refresh($cache_dir, $limits);
     if (!$allowed) {
@@ -42,7 +64,14 @@ if ($q{refresh} && $user && $home && -d $home) {
     );
     local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
     system(@cmd);
-    $notice = $? == 0 ? 'Scan refreshed for this account.' : 'Scan is already running or returned a non-zero status; existing cache is shown.';
+    if ($? == 0) {
+        my $fresh = read_json($account_cache) || {};
+        $notice = $fresh->{scan_complete}
+            ? 'Scan refreshed for this account.'
+            : 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.';
+    } else {
+        $notice = 'Scan is already running or returned a non-zero status; existing cache is shown.';
+    }
     }
 }
 
@@ -50,10 +79,10 @@ my $data = read_json($account_cache);
 $data = undef if $data && (($data->{user} || '') ne $user);
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
-print page($data, $notice, $user);
+print page($data, $notice, $user, $nonce);
 
 sub page {
-    my ($a, $notice, $user) = @_;
+    my ($a, $notice, $user, $nonce) = @_;
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
     my $summary = $a ? summary($a) : '<div class="empty">No account scan cache exists yet.</div>';
     my $display_name = h($config->{display_name} || $APP);
@@ -72,7 +101,13 @@ sub page {
         <h1>$display_name</h1>
         <p class="muted">Account view for @{[h($user || 'unknown')]}. Paths are shown relative to your home directory.</p>
       </div>
-      <div class="actions"><a class="button" href="?refresh=1">Refresh scan</a></div>
+      <div class="actions">
+        <form method="post" class="inline-form">
+          <input type="hidden" name="refresh" value="1">
+          <input type="hidden" name="action_nonce" value="@{[h($nonce)]}">
+          <button class="button" type="submit">Refresh scan</button>
+        </form>
+      </div>
     </header>
     $notice_html
     $summary
@@ -230,6 +265,10 @@ sub account_package {
 sub allow_refresh {
     my ($cache_dir, $limits) = @_;
     my $rate_path = File::Spec->catfile($cache_dir, 'rate.json');
+    my $lock_path = File::Spec->catfile($cache_dir, 'rate.lock');
+    open my $lock_fh, '>>', $lock_path or return (0, 'Unable to lock the refresh limiter.');
+    chmod 0600, $lock_path;
+    flock($lock_fh, LOCK_EX) or return (0, 'Unable to lock the refresh limiter.');
     my $now = time;
     my $window = 3600;
     my $state = read_json($rate_path) || {};
@@ -238,26 +277,30 @@ sub allow_refresh {
 
     if ($limits->{cpanel_min_interval_seconds} && $last && $now - $last < $limits->{cpanel_min_interval_seconds}) {
         my $wait = $limits->{cpanel_min_interval_seconds} - ($now - $last);
+        close $lock_fh;
         return (0, 'Refresh throttled. Try again in about ' . int(($wait + 59) / 60) . ' minute(s).');
     }
     if (@attempts >= $limits->{cpanel_refreshes_per_hour}) {
         my $reset = $attempts[0] + $window - $now;
+        close $lock_fh;
         return (0, 'Hourly refresh limit reached. Try again in about ' . int(($reset + 59) / 60) . ' minute(s).');
     }
 
     push @attempts, $now;
     write_json($rate_path, { last_attempt => $now, attempts => \@attempts });
+    close $lock_fh;
     return (1, '');
 }
 
 sub write_json {
     my ($path, $data) = @_;
     my $tmp = "$path.$$";
-    open my $fh, '>', $tmp or return;
+    open my $fh, '>', $tmp or return 0;
     print {$fh} JSON::PP->new->canonical->pretty->encode($data);
-    close $fh or return;
+    close $fh or return 0;
     chmod 0600, $tmp;
-    rename $tmp, $path;
+    rename $tmp, $path or return 0;
+    return 1;
 }
 
 sub bounded_int {
@@ -282,6 +325,50 @@ sub parse_query {
         $out{$k} = $v;
     }
     return %out;
+}
+
+sub request_params {
+    my %out = parse_query($ENV{QUERY_STRING} || '');
+    return %out unless ($ENV{REQUEST_METHOD} || 'GET') eq 'POST';
+    my $length = $ENV{CONTENT_LENGTH} || 0;
+    return %out unless $length =~ /\A\d+\z/ && $length > 0 && $length <= 16384;
+    my $body = '';
+    my $read = read(STDIN, $body, $length);
+    return %out unless defined $read && $read == $length;
+    my %post = parse_query($body);
+    @out{keys %post} = values %post;
+    return %out;
+}
+
+sub action_nonce {
+    my ($cache_dir) = @_;
+    my $path = File::Spec->catfile($cache_dir, 'action-nonce.json');
+    my $saved = read_json($path);
+    if ($saved && ref $saved eq 'HASH' && ($saved->{created_at} || 0) > time - 1800
+        && ($saved->{token} || '') =~ /\A[0-9a-f]{64}\z/) {
+        return $saved->{token};
+    }
+    my $random = '';
+    if (open my $fh, '<', '/dev/urandom') {
+        read($fh, $random, 32);
+        close $fh;
+    }
+    die "Unable to create action nonce\n" unless length($random) == 32;
+    my $token = unpack('H*', $random);
+    write_json($path, { token => $token, created_at => time })
+        or die "Unable to persist action nonce\n";
+    chmod 0600, $path;
+    return $token;
+}
+
+sub valid_nonce {
+    my ($expected, $provided) = @_;
+    return 0 unless defined $expected && defined $provided
+        && $expected =~ /\A[0-9a-f]{64}\z/ && $provided =~ /\A[0-9a-f]{64}\z/
+        && length($expected) == length($provided);
+    my $diff = 0;
+    $diff |= ord(substr($expected, $_, 1)) ^ ord(substr($provided, $_, 1)) for 0 .. length($expected) - 1;
+    return $diff == 0;
 }
 
 sub fmt_bytes {

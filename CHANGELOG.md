@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+- Changed scanner runtime limits from per-account limits to a true whole-run budget.
+- Added oldest-cache-first account rotation and explicit planned, remaining, batch-complete, and scope-complete report metadata.
+- Changed WHM and cPanel scan/update/settings actions to POST requests protected by short-lived server-side nonces.
+- Removed the WHM execution-context root fallback and now require cPanel's authenticated `REMOTE_USER`.
+- Serialized cPanel rate-limit state updates to prevent concurrent refresh bypasses.
+- Required HTTPS and SHA-256 package verification for updater apply and WHMCS bootstrap deployment flows.
+- Added archive path/link validation and removed the predictable root-owned updater log in `/tmp`.
+- Added fail-closed WHMCS SSH host-key pinning, remote exit-status verification, execution deadlines, and a 16 MiB output cap.
+- Restricted the WHMCS health widget to administrators with `Perform Server Operations` permission.
+- Added partial-sync health reporting and cumulative WHMCS account coverage.
+- Added request-security and bounded-rotation regression tests.
+
 ## 0.2.9
 
 - Reduced front-end branding with configurable display names and footer prefixes for WHM, cPanel, and WHMCS views.
