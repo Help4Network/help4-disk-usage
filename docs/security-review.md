@@ -42,7 +42,7 @@
 - WHM fails closed when cPanel does not supply an authenticated `REMOTE_USER`.
 - cPanel rejects authenticated/runtime identity mismatches and resolves home directories from the system password database.
 - UI performs output escaping for rendered values.
-- WHMCS one-click deploy/check/update/sync requires PHP `ssh2`, a verified SHA-256 host fingerprint, a bounded remote command, and a verified remote exit status.
+- WHMCS one-click deploy/check/update/sync uses PHP `ssh2` or WHMCS-bundled phpseclib 2/3, and requires a verified SHA-256 host fingerprint before authentication, a bounded remote command, and a verified remote exit status.
 - The WHMCS dashboard widget requires the `Perform Server Operations` administrator permission.
 - WHM and WHMCS apply/deploy flows require HTTPS and a manifest SHA-256 match before extracting a package.
 - The updater rejects archive traversal paths, multi-root archives, archive links, excessive entry counts, and package/manifest version mismatches.

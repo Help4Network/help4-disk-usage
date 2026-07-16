@@ -113,9 +113,9 @@ The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md
 - WHMCS with addon module support.
 - PHP compatible with current WHMCS releases.
 - WHMCS database access through `WHMCS\Database\Capsule`.
-- Optional PHP `ssh2` extension with SHA-256 fingerprint support for one-click deploy/check/update/sync actions.
+- A supported SSH transport for one-click deploy/check/update/sync actions: PHP `ssh2`, bundled phpseclib 2, or bundled phpseclib 3.
 
-If `ssh2` is not installed, the module still provides manual deployment commands and can store/report data after scans are synced by another trusted workflow.
+The addon prefers PHP `ssh2` and falls back to WHMCS's bundled phpseclib. If neither transport is available, it still provides manual deployment commands and can store/report data after scans are synced by another trusted workflow.
 
 ## Build a Release
 
@@ -138,8 +138,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.0.tar.gz
-cd help4-disk-usage-0.3.0
+tar -xzf help4-disk-usage-0.3.1.tar.gz
+cd help4-disk-usage-0.3.1
 sudo ./install.sh
 ```
 
@@ -266,7 +266,7 @@ For each cPanel server, WHMCS provides:
 
 One-click actions require:
 
-- PHP `ssh2` extension installed in the WHMCS PHP runtime.
+- PHP `ssh2` or WHMCS-bundled phpseclib 2/3 in the WHMCS PHP runtime.
 - A WHMCS server record with a decryptable root/admin SSH password.
 - SSH access from WHMCS to the cPanel server.
 - A verified SSH host fingerprint mapped by server ID, hostname, or IP.
@@ -387,7 +387,7 @@ When a whole-server scan reaches its budget, the scanner writes the completed ac
 - WHMCS stores summaries and hints, not destructive cleanup commands.
 - WHMCS deploy/check/update/sync POST actions are restricted to WHMCS server records whose module type is cPanel/WHM-like.
 - WHMCS SSH actions verify a configured SHA-256 host fingerprint before password authentication unless the explicit unsafe override is enabled.
-- WHMCS remote commands require a verified exit marker, have a hard read deadline, and cap captured output at 16 MiB.
+- WHMCS remote commands require a verified exit marker, have a bounded execution timeout, and cap captured output at 16 MiB.
 - Update apply and bootstrap deployment require HTTPS plus a manifest SHA-256 match before extraction.
 - WHMCS strips absolute scanner paths before storing support summary lists.
 - WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.

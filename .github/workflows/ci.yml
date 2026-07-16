@@ -35,6 +35,7 @@ jobs:
         run: |
           php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
           php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
+          php -l tests/whmcs_ssh_security.php
 
       - name: Scanner smoke tests
         run: |
@@ -42,6 +43,7 @@ jobs:
           ./tests/security_boundaries.sh
           ./tests/branding_update_contract.sh
           ./tests/request_security.sh
+          php tests/whmcs_ssh_security.php
 
       - name: Build release tarball
         run: ./scripts/package.sh

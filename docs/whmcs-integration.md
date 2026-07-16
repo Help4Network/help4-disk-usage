@@ -20,7 +20,7 @@ Then activate **Help4 Disk Usage** in **System Settings > Addon Modules**.
 - WHMCS admin-home widget with health counts and prioritized cPanel server rows.
 - Server Health tab for WHMCS admins and support leads.
 - Server deployment/check/update/sync controls.
-- Manual deployment command for hosts without PHP `ssh2`.
+- Manual deployment command for hosts without a supported PHP SSH transport.
 - Customer report table mapped to WHMCS services.
 - Client-area page at `index.php?m=help4_disk_usage`.
 - Client navbar link when client reports are enabled.
@@ -50,7 +50,7 @@ One-click deploy/check/update/sync uses SSH from WHMCS to the cPanel server.
 
 Required:
 
-- PHP `ssh2` extension in the WHMCS PHP runtime.
+- PHP `ssh2` or WHMCS-bundled phpseclib 2/3 in the WHMCS PHP runtime.
 - WHMCS server record with host/IP, SSH user, SSH port, and decryptable password.
 - Network path from WHMCS to the cPanel server over SSH.
 - Root or sufficiently privileged account on the cPanel server.

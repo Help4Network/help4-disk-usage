@@ -6,8 +6,8 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.3.0';
-const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.0.tar.gz';
+const H4DU_VERSION = '0.3.1';
+const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.1.tar.gz';
 const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 
 function help4_disk_usage_config()
@@ -31,7 +31,7 @@ function help4_disk_usage_config()
                 'Type' => 'text',
                 'Size' => '90',
                 'Default' => H4DU_DEFAULT_UPDATE_MANIFEST_URL,
-                'Description' => 'JSON manifest used by Check/Update. It should publish version, package_url, and optional release_notes_url.',
+                'Description' => 'JSON manifest used by Check/Update. It must publish version, package_url, and sha256; release_notes_url is optional.',
             ],
             'sshPort' => [
                 'FriendlyName' => 'Default SSH Port',
@@ -789,12 +789,36 @@ function help4_disk_usage_fingerprint_matches($expected, $raw)
     return strlen($hex) === 64 && hash_equals(bin2hex($raw), $hex);
 }
 
+function help4_disk_usage_public_host_key_fingerprint_raw($publicKey)
+{
+    $publicKey = trim((string)$publicKey);
+    if (!preg_match('/\A([A-Za-z0-9][A-Za-z0-9@._+-]{1,127})[ \t]+([A-Za-z0-9+\/]{20,}={0,2})\z/', $publicKey, $matches)) {
+        return false;
+    }
+    $algorithm = $matches[1];
+    if (!preg_match('/\A(?:ssh-|ecdsa-sha2-|sk-|rsa-sha2-)/', $algorithm)) {
+        return false;
+    }
+    $blob = base64_decode($matches[2], true);
+    if (!is_string($blob) || strlen($blob) < 8 || strlen($blob) > 16384) {
+        return false;
+    }
+    $length = unpack('Nlength', substr($blob, 0, 4));
+    $algorithmLength = (int)($length['length'] ?? 0);
+    if ($algorithmLength < 1 || $algorithmLength > 128 || 4 + $algorithmLength > strlen($blob)) {
+        return false;
+    }
+    $embeddedAlgorithm = substr($blob, 4, $algorithmLength);
+    $algorithmMatches = hash_equals($embeddedAlgorithm, $algorithm)
+        || (strpos($algorithm, 'rsa-sha2-') === 0 && $embeddedAlgorithm === 'ssh-rsa');
+    if (!$algorithmMatches) {
+        return false;
+    }
+    return hash('sha256', $blob, true);
+}
+
 function help4_disk_usage_ssh_exec($server, $command, $defaultPort, $expectedFingerprint = '', $allowUnpinned = false, $timeoutSeconds = 300)
 {
-    if (!function_exists('ssh2_connect')) {
-        return ['ok' => false, 'error' => 'PHP ssh2 extension is not installed. Use the manual deployment command or install ssh2 for one-click WHMCS deployment.', 'output' => ''];
-    }
-
     $host = $server->hostname ?: $server->ipaddress;
     $port = min(65535, max(1, (int)($defaultPort ?: 22)));
     $user = $server->username ?: 'root';
@@ -804,41 +828,61 @@ function help4_disk_usage_ssh_exec($server, $command, $defaultPort, $expectedFin
         return ['ok' => false, 'error' => 'Missing host or decryptable server password in WHMCS server record.', 'output' => ''];
     }
 
+    if (function_exists('ssh2_connect') && function_exists('ssh2_fingerprint')
+        && defined('SSH2_FINGERPRINT_SHA256') && defined('SSH2_FINGERPRINT_RAW')) {
+        return help4_disk_usage_native_ssh_exec(
+            $host,
+            $port,
+            $user,
+            $password,
+            $command,
+            $expectedFingerprint,
+            $allowUnpinned,
+            $timeoutSeconds
+        );
+    }
+
+    foreach (['phpseclib3\\Net\\SSH2', 'phpseclib\\Net\\SSH2'] as $class) {
+        if (class_exists($class)) {
+            return help4_disk_usage_phpseclib_ssh_exec(
+                $class,
+                $host,
+                $port,
+                $user,
+                $password,
+                $command,
+                $expectedFingerprint,
+                $allowUnpinned,
+                $timeoutSeconds
+            );
+        }
+    }
+
+    return ['ok' => false, 'error' => 'No supported SSH transport is available. Install PHP ssh2 or use a WHMCS runtime that provides phpseclib.', 'output' => ''];
+}
+
+function help4_disk_usage_native_ssh_exec($host, $port, $user, $password, $command, $expectedFingerprint, $allowUnpinned, $timeoutSeconds)
+{
     $conn = @ssh2_connect($host, $port);
     if (!$conn) {
         return ['ok' => false, 'error' => 'Unable to connect to ' . $host . ':' . $port . '.', 'output' => ''];
     }
 
-    if (!function_exists('ssh2_fingerprint') || !defined('SSH2_FINGERPRINT_SHA256') || !defined('SSH2_FINGERPRINT_RAW')) {
-        return ['ok' => false, 'error' => 'PHP ssh2 cannot provide a SHA-256 host fingerprint; remote actions are blocked.', 'output' => ''];
-    }
     $rawFingerprint = @ssh2_fingerprint($conn, SSH2_FINGERPRINT_SHA256 | SSH2_FINGERPRINT_RAW);
-    $displayFingerprint = is_string($rawFingerprint) && strlen($rawFingerprint) === 32
-        ? 'SHA256:' . rtrim(base64_encode($rawFingerprint), '=')
-        : 'unavailable';
-    if ($expectedFingerprint === '' && !$allowUnpinned) {
-        return [
-            'ok' => false,
-            'error' => 'SSH host fingerprint is not configured for this server. Verify it out of band, then add ' . $displayFingerprint . ' to the module fingerprint map.',
-            'output' => '',
-        ];
-    }
-    if ($expectedFingerprint !== '' && !help4_disk_usage_fingerprint_matches($expectedFingerprint, $rawFingerprint)) {
-        return ['ok' => false, 'error' => 'SSH host fingerprint mismatch for ' . $host . '. Remote action was blocked before authentication.', 'output' => ''];
+    $fingerprintError = help4_disk_usage_fingerprint_error($host, $expectedFingerprint, $allowUnpinned, $rawFingerprint);
+    if ($fingerprintError !== '') {
+        return ['ok' => false, 'error' => $fingerprintError, 'output' => ''];
     }
 
     if (!@ssh2_auth_password($conn, $user, $password)) {
         return ['ok' => false, 'error' => 'SSH authentication failed for ' . $user . '@' . $host . '.', 'output' => ''];
     }
 
-    try {
-        $marker = '__H4DU_EXIT_' . bin2hex(random_bytes(12)) . '__';
-    } catch (Throwable $e) {
+    $wrapped = help4_disk_usage_wrapped_remote_command($command);
+    if (!$wrapped) {
         return ['ok' => false, 'error' => 'Unable to create a remote execution marker.', 'output' => ''];
     }
-    $payload = 'set +e; ( ' . $command . ' ); rc=$?; printf "\\n' . $marker . ':%s\\n" "$rc"';
-    $wrappedCommand = 'bash -lc ' . escapeshellarg($payload);
-    $stream = @ssh2_exec($conn, $wrappedCommand . ' 2>&1');
+    $stream = @ssh2_exec($conn, $wrapped['command'] . ' 2>&1');
     if (!$stream) {
         return ['ok' => false, 'error' => 'Unable to execute remote command.', 'output' => ''];
     }
@@ -868,6 +912,96 @@ function help4_disk_usage_ssh_exec($server, $command, $defaultPort, $expectedFin
         }
     }
     fclose($stream);
+    return help4_disk_usage_parse_remote_output($output, $wrapped['marker']);
+}
+
+function help4_disk_usage_phpseclib_ssh_exec($class, $host, $port, $user, $password, $command, $expectedFingerprint, $allowUnpinned, $timeoutSeconds)
+{
+    $timeoutSeconds = min(900, max(30, (int)$timeoutSeconds));
+    try {
+        $ssh = new $class($host, $port, $timeoutSeconds);
+        $publicKey = @$ssh->getServerPublicHostKey();
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => 'Unable to connect to ' . $host . ':' . $port . '.', 'output' => ''];
+    }
+    $rawFingerprint = help4_disk_usage_public_host_key_fingerprint_raw($publicKey);
+    $fingerprintError = help4_disk_usage_fingerprint_error($host, $expectedFingerprint, $allowUnpinned, $rawFingerprint);
+    if ($fingerprintError !== '') {
+        return ['ok' => false, 'error' => $fingerprintError, 'output' => ''];
+    }
+    try {
+        if (!@$ssh->login($user, $password)) {
+            return ['ok' => false, 'error' => 'SSH authentication failed for ' . $user . '@' . $host . '.', 'output' => ''];
+        }
+        $ssh->setTimeout($timeoutSeconds);
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => 'SSH authentication failed for ' . $user . '@' . $host . '.', 'output' => ''];
+    }
+
+    $wrapped = help4_disk_usage_wrapped_remote_command($command);
+    if (!$wrapped) {
+        return ['ok' => false, 'error' => 'Unable to create a remote execution marker.', 'output' => ''];
+    }
+    $output = '';
+    $outputTooLarge = false;
+    try {
+        $result = $ssh->exec($wrapped['command'] . ' 2>&1', function ($chunk) use (&$output, &$outputTooLarge) {
+            if (!is_string($chunk) || $chunk === '' || $outputTooLarge) {
+                return;
+            }
+            $remaining = 16777216 - strlen($output);
+            if (strlen($chunk) > $remaining) {
+                $output .= substr($chunk, 0, max(0, $remaining));
+                $outputTooLarge = true;
+                return;
+            }
+            $output .= $chunk;
+        });
+    } catch (Throwable $e) {
+        return ['ok' => false, 'error' => 'Unable to execute remote command.', 'output' => substr($output, -2000)];
+    }
+    if ($outputTooLarge) {
+        return ['ok' => false, 'error' => 'Remote command output exceeded the 16 MiB safety limit.', 'output' => substr($output, -2000)];
+    }
+    if (method_exists($ssh, 'isTimeout') && $ssh->isTimeout()) {
+        return ['ok' => false, 'error' => 'Remote command exceeded the ' . $timeoutSeconds . ' second safety limit.', 'output' => substr($output, -2000)];
+    }
+    if ($result === false && $output === '') {
+        return ['ok' => false, 'error' => 'Unable to execute remote command.', 'output' => ''];
+    }
+    if (is_string($result) && $output === '') {
+        $output = $result;
+    }
+    return help4_disk_usage_parse_remote_output($output, $wrapped['marker']);
+}
+
+function help4_disk_usage_fingerprint_error($host, $expectedFingerprint, $allowUnpinned, $rawFingerprint)
+{
+    $displayFingerprint = is_string($rawFingerprint) && strlen($rawFingerprint) === 32
+        ? 'SHA256:' . rtrim(base64_encode($rawFingerprint), '=')
+        : 'unavailable';
+    if ($expectedFingerprint === '' && !$allowUnpinned) {
+        return 'SSH host fingerprint is not configured for this server. Verify it out of band, then add ' . $displayFingerprint . ' to the module fingerprint map.';
+    }
+    if ($expectedFingerprint !== '' && !help4_disk_usage_fingerprint_matches($expectedFingerprint, $rawFingerprint)) {
+        return 'SSH host fingerprint mismatch for ' . $host . '. Remote action was blocked before authentication.';
+    }
+    return '';
+}
+
+function help4_disk_usage_wrapped_remote_command($command)
+{
+    try {
+        $marker = '__H4DU_EXIT_' . bin2hex(random_bytes(12)) . '__';
+    } catch (Throwable $e) {
+        return false;
+    }
+    $payload = 'set +e; ( ' . $command . ' ); rc=$?; printf "\\n' . $marker . ':%s\\n" "$rc"';
+    return ['marker' => $marker, 'command' => 'bash -lc ' . escapeshellarg($payload)];
+}
+
+function help4_disk_usage_parse_remote_output($output, $marker)
+{
     $pattern = '/(?:\r?\n)' . preg_quote($marker, '/') . ':(\d+)(?:\r?\n)?\z/';
     if (!preg_match($pattern, $output, $matches)) {
         return ['ok' => false, 'error' => 'Remote command ended without a verified exit status.', 'output' => trim((string)$output)];
