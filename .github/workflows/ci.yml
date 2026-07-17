@@ -25,6 +25,7 @@ jobs:
           bash -n src/bin/help4-disk-usage-update
           bash -n scripts/package.sh
           bash -n scripts/package-whmcs.sh
+          bash -n scripts/build-tutorial-pack.sh
           bash -n tests/whmcs_package.sh
 
       - name: Perl syntax

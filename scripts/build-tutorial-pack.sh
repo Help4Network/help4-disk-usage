@@ -11,14 +11,17 @@ PACK_DIR="$OUT_DIR/$PACK_NAME"
 ZIP_FILE="$OUT_DIR/$PACK_NAME.zip"
 
 test -n "$VERSION"
-command -v "$NODE_BIN" >/dev/null 2>&1 || test -x "$NODE_BIN"
+if [[ "$NODE_BIN" != */* ]]; then
+  NODE_BIN="$(command -v "$NODE_BIN")"
+fi
+test -x "$NODE_BIN"
 command -v zip >/dev/null 2>&1
 command -v rg >/dev/null 2>&1
 
 rm -rf "$SCREENSHOT_DIR" "$PACK_DIR" "$ZIP_FILE"
 mkdir -p "$PACK_DIR/screenshots" "$PACK_DIR/docs"
 
-"$NODE_BIN" "$ROOT_DIR/scripts/render-marketing-screenshots.js"
+"$NODE_BIN" "$ROOT_DIR/scripts/render-marketing-screenshots.js" >/dev/null
 cp -a "$SCREENSHOT_DIR/." "$PACK_DIR/screenshots/"
 
 cp "$ROOT_DIR/docs/marketing/tutorial-pack-readme.md" "$PACK_DIR/README.md"
