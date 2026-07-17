@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Added a standalone, checksummed WHMCS addon zip and package validation test.
+- Added release automation that publishes both the cPanel/WHM and WHMCS packages on version tags.
+- Expanded WHMCS installation, activation, host-key pinning, first-run, upgrade, removal, verification, and troubleshooting instructions.
+
 ## 0.3.1
 
 - Added a host-pinned phpseclib 2/3 fallback for WHMCS installations whose PHP runtime does not provide the native `ssh2` extension.

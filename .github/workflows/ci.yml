@@ -24,6 +24,8 @@ jobs:
           bash -n uninstall.sh
           bash -n src/bin/help4-disk-usage-update
           bash -n scripts/package.sh
+          bash -n scripts/package-whmcs.sh
+          bash -n tests/whmcs_package.sh
 
       - name: Perl syntax
         run: |
@@ -43,7 +45,10 @@ jobs:
           ./tests/security_boundaries.sh
           ./tests/branding_update_contract.sh
           ./tests/request_security.sh
+          ./tests/whmcs_package.sh
           php tests/whmcs_ssh_security.php
 
-      - name: Build release tarball
-        run: ./scripts/package.sh
+      - name: Build release packages
+        run: |
+          ./scripts/package.sh
+          ./scripts/package-whmcs.sh

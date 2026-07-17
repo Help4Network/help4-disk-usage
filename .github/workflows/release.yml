@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Validate release tag
+        run: |
+          version="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" src/bin/help4-disk-usage-scan | head -n 1)"
+          test "$GITHUB_REF_NAME" = "v$version"
+
+      - name: Run package checks
+        run: |
+          bash -n scripts/package.sh scripts/package-whmcs.sh tests/whmcs_package.sh
+          php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
+          php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
+          ./tests/whmcs_package.sh
+          ./scripts/package.sh
+
+      - name: Add cPanel package checksum
+        run: |
+          archive="$(find outputs -maxdepth 1 -type f -name 'help4-disk-usage-[0-9]*.tar.gz' -print -quit)"
+          archive_dir="$(dirname "$archive")"
+          archive_name="$(basename "$archive")"
+          (cd "$archive_dir" && sha256sum "$archive_name" > "$archive_name.sha256")
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "Help4 Disk Usage $GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" \
+            outputs/help4-disk-usage-[0-9]*.tar.gz \
+            outputs/help4-disk-usage-[0-9]*.tar.gz.sha256 \
+            outputs/help4-disk-usage-whmcs-*.zip \
+            outputs/help4-disk-usage-whmcs-*.zip.sha256 \
+            --clobber

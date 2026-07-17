@@ -121,25 +121,28 @@ The addon prefers PHP `ssh2` and falls back to WHMCS's bundled phpseclib. If nei
 
 ```bash
 ./scripts/package.sh
+./scripts/package-whmcs.sh
 ```
 
 Output:
 
 ```text
 outputs/help4-disk-usage-<version>.tar.gz
+outputs/help4-disk-usage-whmcs-<version>.zip
+outputs/help4-disk-usage-whmcs-<version>.zip.sha256
 ```
 
-The tarball contains the WHM/cPanel plugin, WHMCS addon, docs, tests, and packaging metadata.
+The tarball contains the complete WHM/cPanel plugin, WHMCS addon, docs, tests, and packaging metadata. The zip is a standalone WHMCS addon package that extracts directly below `modules/addons/`.
 
-CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smoke tests, security-boundary smoke tests, and release packaging on pushes and pull requests.
+CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smoke tests, security-boundary smoke tests, standalone WHMCS package validation, and release packaging on pushes and pull requests. Version-tag pushes publish both install packages and their checksums to GitHub Releases.
 
 ## Install on a cPanel Server
 
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.1.tar.gz
-cd help4-disk-usage-0.3.1
+tar -xzf help4-disk-usage-0.3.2.tar.gz
+cd help4-disk-usage-0.3.2
 sudo ./install.sh
 ```
 
@@ -200,16 +203,39 @@ The uninstaller snapshots installed files, calls cPanel `uninstall_plugin` when 
 
 ## Install the WHMCS Addon
 
-Copy this directory into your WHMCS install:
+Download these files from [GitHub Releases](https://github.com/Help4Network/help4-disk-usage/releases/latest):
 
 ```text
-integrations/whmcs/modules/addons/help4_disk_usage
+help4-disk-usage-whmcs-<version>.zip
+help4-disk-usage-whmcs-<version>.zip.sha256
 ```
 
-Target path:
+Verify the package:
+
+```bash
+sha256sum -c help4-disk-usage-whmcs-<version>.zip.sha256
+```
+
+Set the WHMCS root, back up any existing module, and extract the package:
+
+```bash
+export WHMCS_ROOT=/path/to/whmcs
+test -f "$WHMCS_ROOT/init.php"
+if [ -d "$WHMCS_ROOT/modules/addons/help4_disk_usage" ]; then
+  cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
+    "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+unzip -q help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
+chown -R --reference="$WHMCS_ROOT/modules/addons" \
+  "$WHMCS_ROOT/modules/addons/help4_disk_usage"
+php -l "$WHMCS_ROOT/modules/addons/help4_disk_usage/help4_disk_usage.php"
+php -l "$WHMCS_ROOT/modules/addons/help4_disk_usage/hooks.php"
+```
+
+The final entry point must be:
 
 ```text
-<whmcs-root>/modules/addons/help4_disk_usage
+<whmcs-root>/modules/addons/help4_disk_usage/help4_disk_usage.php
 ```
 
 Then in WHMCS admin:
@@ -230,6 +256,8 @@ Then in WHMCS admin:
 4. Set administrator role access for the addon.
 5. Open **Addons > Help4 Disk Usage**.
 
+Use conservative first-run limits such as **Sync Account Limit = 2** and **Whole Sync Scan Max Seconds = 15**. Verify each server's SSH host key from its console and leave **Allow Unpinned SSH** off.
+
 Activation creates:
 
 ```text
@@ -239,6 +267,23 @@ mod_help4_disk_usage_events
 ```
 
 Deactivation keeps these tables intentionally so support history is not lost.
+
+The detailed operator guide, including server-record preparation, fingerprint pinning, first-run verification, upgrades, removal, troubleshooting, and rollback notes, is in [`docs/whmcs-integration.md`](docs/whmcs-integration.md).
+
+## Upgrade the WHMCS Addon
+
+Do not deactivate the addon for a normal upgrade. Verify the new zip, back up `modules/addons/help4_disk_usage`, and extract the new package over `modules/addons/`. Then save the addon settings and open the addon so WHMCS detects the changed configuration version and runs the module upgrade function.
+
+```bash
+export WHMCS_ROOT=/path/to/whmcs
+cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
+  "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
+chown -R --reference="$WHMCS_ROOT/modules/addons" \
+  "$WHMCS_ROOT/modules/addons/help4_disk_usage"
+```
+
+Confirm the module version, Server Health page, admin-home widget, and a mapped client report after upgrading.
 
 ## WHMCS Deployment Workflow
 
@@ -297,6 +342,12 @@ index.php?m=help4_disk_usage
 ```
 
 Customers see only their own mapped services and support-safe remediation hints.
+
+## Remove the WHMCS Addon
+
+Back up the WHMCS database and module directory, deactivate **Help4 Disk Usage** under **System Settings > Addon Modules**, and then remove or archive `modules/addons/help4_disk_usage`.
+
+Deactivation intentionally retains the `mod_help4_disk_usage_*` tables so support history is not silently destroyed. Removing the WHMCS addon does not uninstall the cPanel/WHM plugin from managed servers.
 
 ## Scanner CLI
 
@@ -494,9 +545,10 @@ References:
 - [WHMCS Addon Modules](https://developers.whmcs.com/addon-modules/)
 - [WHMCS Addon Configuration](https://developers.whmcs.com/addon-modules/configuration/)
 - [WHMCS Addon Installation & Uninstallation](https://developers.whmcs.com/addon-modules/installation-uninstallation/)
+- [WHMCS Addon Upgrades](https://developers.whmcs.com/addon-modules/upgrades/)
 - [WHMCS Admin Area Output](https://developers.whmcs.com/addon-modules/admin-area-output/)
 - [WHMCS Client Area Output](https://developers.whmcs.com/addon-modules/client-area-output/)
-- [WHMCS Addon Hooks](https://developers.whmcs.com/addon-modules/hooks/)
+- [WHMCS Module Hooks](https://developers.whmcs.com/hooks/module-hooks/)
 - [cPanel WHM AppConfig Configuration](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-appconfig-configuration-file)
 - [cPanel Plugin Installation](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins)
 
@@ -509,6 +561,7 @@ Run scanner, security boundary, and branding/update contract smoke tests:
 ./tests/security_boundaries.sh
 ./tests/branding_update_contract.sh
 ./tests/request_security.sh
+./tests/whmcs_package.sh
 ```
 
 Run syntax checks:
@@ -519,6 +572,7 @@ perl -c src/whm/index.cgi
 perl -c src/cpanel/index.live.pl
 php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
 php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
+bash -n scripts/package-whmcs.sh
 ```
 
 ## License

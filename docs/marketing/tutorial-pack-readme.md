@@ -18,7 +18,7 @@ Do not replace these images with files from engineering evidence directories.
 
 ## Publishing Notes
 
-- Link downloads to the immutable GitHub release tag and verify the SHA-256 value from `update.json`.
+- Link downloads to the immutable GitHub release. Verify the cPanel package against `update.json` and the standalone WHMCS zip against its adjacent `.sha256` file.
 - Explain that the plugin reports cleanup candidates and does not delete customer files.
 - Explain that foreground scans share one lock and cPanel refreshes are rate-limited.
 - Keep the small linked Help4 Network builder credit visible in screenshots, tutorials, and derived reports.
