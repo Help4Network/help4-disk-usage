@@ -32,6 +32,7 @@ jobs:
           php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
           php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
           ./tests/whmcs_package.sh
+          HELP4_DU_PREPUBLICATION_MANIFEST=1 ./tests/branding_update_contract.sh
           ./scripts/package.sh
 
       - name: Add cPanel package checksum

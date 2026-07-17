@@ -42,7 +42,9 @@ JSON_PAYLOAD="$json" perl -MJSON::PP=decode_json -e '
 
 scanner_version="$("$ROOT_DIR/src/bin/help4-disk-usage-scan" --help | sed -n 's/^Help4 Disk Usage scanner v//p' | head -n 1)"
 manifest_version="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{version};' "$ROOT_DIR/update.json")"
-test "$scanner_version" = "$manifest_version"
+if [ "${HELP4_DU_PREPUBLICATION_MANIFEST:-0}" != "1" ]; then
+  test "$scanner_version" = "$manifest_version"
+fi
 manifest_sha="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{sha256};' "$ROOT_DIR/update.json")"
 grep -Eq '^[0-9a-f]{64}$' <<<"$manifest_sha"
 
