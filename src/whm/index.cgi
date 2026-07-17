@@ -281,7 +281,7 @@ sub default_config {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => 'Disk Usage Audit',
         credit_prefix                 => 'Built by',
-        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.2.tar.gz',
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz',
         update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
@@ -303,7 +303,7 @@ sub load_config {
         || File::Spec->catdir($CACHE_DIR, 'locks');
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
-    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.2.tar.gz';
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz';
     $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);

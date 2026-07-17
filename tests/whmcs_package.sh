@@ -29,6 +29,11 @@ unzip -p "$ZIP_FILE" help4_disk_usage/help4_disk_usage.php \
 unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Install$'
 unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Upgrade$'
 unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Remove the Addon$'
+unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q 'BACKUP_DIR=/var/backups/help4-disk-usage'
+if unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q 'modules/addons/help4_disk_usage\.backup'; then
+  echo "WHMCS package documentation stores backups below the document root." >&2
+  exit 1
+fi
 
 expected_sha256="$(awk 'NR == 1 {print $1}' "$CHECKSUM_FILE")"
 if command -v sha256sum >/dev/null 2>&1; then

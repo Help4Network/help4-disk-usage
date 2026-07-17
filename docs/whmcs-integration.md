@@ -66,16 +66,19 @@ Set `WHMCS_ROOT` to the real WHMCS document root. The directory should contain `
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
+export BACKUP_DIR=/var/backups/help4-disk-usage
 test -f "$WHMCS_ROOT/init.php"
 test -d "$WHMCS_ROOT/modules/addons"
+install -d -m 0700 "$BACKUP_DIR"
 ```
 
 Back up an existing copy before replacing it:
 
 ```bash
 if [ -d "$WHMCS_ROOT/modules/addons/help4_disk_usage" ]; then
-  cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
-    "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
+  chmod 0600 "$backup"
 fi
 ```
 
@@ -235,8 +238,11 @@ Example:
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
-  "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+export BACKUP_DIR=/var/backups/help4-disk-usage
+install -d -m 0700 "$BACKUP_DIR"
+backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
+chmod 0600 "$backup"
 unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
   "$WHMCS_ROOT/modules/addons/help4_disk_usage"

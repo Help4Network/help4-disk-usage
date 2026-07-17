@@ -141,8 +141,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.2.tar.gz
-cd help4-disk-usage-0.3.2
+tar -xzf help4-disk-usage-0.3.3.tar.gz
+cd help4-disk-usage-0.3.3
 sudo ./install.sh
 ```
 
@@ -220,10 +220,13 @@ Set the WHMCS root, back up any existing module, and extract the package:
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
+export BACKUP_DIR=/var/backups/help4-disk-usage
 test -f "$WHMCS_ROOT/init.php"
+install -d -m 0700 "$BACKUP_DIR"
 if [ -d "$WHMCS_ROOT/modules/addons/help4_disk_usage" ]; then
-  cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
-    "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
+  chmod 0600 "$backup"
 fi
 unzip -q help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
@@ -276,8 +279,11 @@ Do not deactivate the addon for a normal upgrade. Verify the new zip, back up `m
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-cp -a "$WHMCS_ROOT/modules/addons/help4_disk_usage" \
-  "$WHMCS_ROOT/modules/addons/help4_disk_usage.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+export BACKUP_DIR=/var/backups/help4-disk-usage
+install -d -m 0700 "$BACKUP_DIR"
+backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
+chmod 0600 "$backup"
 unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
   "$WHMCS_ROOT/modules/addons/help4_disk_usage"
@@ -502,7 +508,7 @@ Verified on Genie:
 - Bounded sample scans without timeout.
 - Cron installed.
 
-Do not deploy to gohoster or dolce01 until Genie review and WHMCS integration review are complete.
+The live rollout used Genie as the first validation target, followed by gohoster02 and dolce01 after the Genie and WHMCS review gates passed. Operators should still use the backup, staged-limit, and verification gates in [`docs/rollout.md`](docs/rollout.md) for every environment.
 
 ## Marketing Notes
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+- Moved WHMCS module backup examples outside the WHMCS document root with restrictive directory and archive permissions.
+- Updated the public rollout status after Genie, gohoster02, and dolce01 validation.
+- Rebuilt the standalone WHMCS package so its embedded installation guide contains the safer backup procedure.
+
 ## 0.3.2
 
 - Added a standalone, checksummed WHMCS addon zip and package validation test.
