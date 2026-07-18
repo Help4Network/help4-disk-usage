@@ -7,6 +7,7 @@ const outDir = path.join(root, 'outputs', 'screenshots');
 fs.mkdirSync(outDir, { recursive: true });
 
 const css = fs.readFileSync(path.join(root, 'src/static/help4-disk-usage.css'), 'utf8');
+const whmCss = fs.readFileSync(path.join(root, 'src/static/help4-disk-usage-whm.css'), 'utf8');
 
 function pluginShell(title, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body><main class="wrap">${body}</main></body></html>`;
@@ -16,8 +17,22 @@ function metric(label, value) {
   return `<div><strong>${value}</strong><span>${label}</span></div>`;
 }
 
-const whmRoot = pluginShell('Help4 Disk Usage', `
-  <header class="topbar"><div><h1>Help4 Disk Usage</h1><p class="muted">Root view: all accounts. Signed in as root.</p></div><div class="actions"><a class="button">Refresh all accounts</a></div></header>
+function whmShell(title, body) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    *{box-sizing:border-box}body{margin:0;background:#fff;color:#151923;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .whm-header{height:52px;background:#17213b;color:#fff;display:flex;align-items:center;padding:0 22px;font-size:18px;font-weight:700}
+    .whm-header span{margin-left:12px;color:#bdc8de;font-size:13px;font-weight:500}
+    .whm-layout{display:grid;grid-template-columns:284px minmax(0,1fr);min-height:898px}
+    .whm-nav{background:#202c54;color:#e6ebf5;padding:20px 18px}.whm-nav h2{margin:0 0 18px;font-size:14px;color:#fff}
+    .whm-nav-group{margin:18px 0 8px;font-weight:700}.whm-nav-link{display:block;padding:8px 12px;color:#e6ebf5;text-decoration:none}
+    .whm-nav-link.selected{background:#314274;border-left:3px solid #fff;padding-left:9px;font-weight:700}
+    .whm-content{min-width:0;padding:26px 24px;background:#fff}
+    ${whmCss}
+  </style></head><body><header class="whm-header">WHM <span>Server Manager</span></header><div class="whm-layout"><aside class="whm-nav"><h2>Main menu</h2><div class="whm-nav-group">System Health</div><a class="whm-nav-link">Show Current Disk Usage</a><div class="whm-nav-group">Plugins</div><a class="whm-nav-link selected">Help4 Disk Usage</a></aside><main class="whm-content"><div class="h4du-page wrap">${body}</div></main></div></body></html>`;
+}
+
+const whmRoot = whmShell('WHM Disk Usage Audit', `
+  <header class="topbar"><div><h1>Disk Usage Audit</h1><p class="muted">Root view: all accounts. Signed in as root.</p></div><div class="actions"><a class="button">Refresh all accounts</a></div></header>
   <section class="metrics">
     ${metric('Visible accounts', '24')}
     ${metric('Indexed file bytes', '812.6 GB')}
