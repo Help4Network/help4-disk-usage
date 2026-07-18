@@ -1,0 +1,244 @@
+.h4du-page {
+  box-sizing: border-box;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 8px 16px 24px;
+  color: #151923;
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.h4du-page *,
+.h4du-page *::before,
+.h4du-page *::after {
+  box-sizing: border-box;
+}
+
+.h4du-page .topbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.h4du-page h1,
+.h4du-page h2 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.h4du-page h1 {
+  font-size: 26px;
+}
+
+.h4du-page h2 {
+  margin: 22px 0 10px;
+  font-size: 18px;
+}
+
+.h4du-page .muted {
+  color: #687386;
+}
+
+.h4du-page .notice,
+.h4du-page .empty {
+  padding: 12px 14px;
+  margin: 12px 0;
+  border: 1px solid #b7d2ff;
+  background: #edf5ff;
+  border-radius: 6px;
+}
+
+.h4du-page .metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.h4du-page .metrics div {
+  background: #fff;
+  border: 1px solid #dde2ea;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.h4du-page .metrics strong {
+  display: block;
+  font-size: 20px;
+}
+
+.h4du-page .metrics span {
+  display: block;
+  color: #687386;
+  margin-top: 4px;
+}
+
+.h4du-page .button {
+  border: 0;
+  display: inline-block;
+  padding: 8px 11px;
+  color: #fff;
+  background: #1f6feb;
+  border-radius: 5px;
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.h4du-page .button.small {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.h4du-page .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.h4du-page .inline-form {
+  display: inline-block;
+  margin: 0;
+}
+
+.h4du-page section {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.h4du-page table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #dde2ea;
+}
+
+.h4du-page th,
+.h4du-page td {
+  padding: 10px;
+  border-bottom: 1px solid #e8ebf0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.h4du-page th {
+  background: #eef1f5;
+  color: #333b4a;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.h4du-page tr:last-child td {
+  border-bottom: 0;
+}
+
+.h4du-page .path {
+  margin-top: 3px;
+  color: #687386;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.h4du-page .pill {
+  display: inline-block;
+  min-width: 68px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.h4du-page .pill.good {
+  color: #075e2a;
+  background: #dff8e8;
+}
+
+.h4du-page .pill.check {
+  color: #774400;
+  background: #fff1c2;
+}
+
+.h4du-page .pill.bad {
+  color: #7a1e16;
+  background: #ffd9d4;
+}
+
+.h4du-page .pill.incomplete {
+  color: #5b356d;
+  background: #f0dcff;
+}
+
+.h4du-page .hints {
+  background: #fff;
+  border: 1px solid #dde2ea;
+  border-radius: 6px;
+  margin: 0;
+  padding: 12px 28px;
+}
+
+.h4du-page .settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dde2ea;
+  border-radius: 6px;
+}
+
+.h4du-page .settings-grid label {
+  display: grid;
+  gap: 5px;
+  color: #333b4a;
+  font-weight: 600;
+}
+
+.h4du-page .settings-grid input,
+.h4du-page .settings-grid textarea {
+  width: 100%;
+  border: 1px solid #cfd6e2;
+  border-radius: 5px;
+  padding: 8px 9px;
+  color: #151923;
+  background: #fff;
+  font: inherit;
+}
+
+.h4du-page .settings-grid textarea {
+  min-height: 150px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.h4du-page .settings-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.h4du-page .credit {
+  margin: 26px 0 0;
+  color: #687386;
+  font-size: 12px;
+  text-align: right;
+}
+
+.h4du-page .credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .h4du-page {
+    padding-inline: 8px;
+  }
+
+  .h4du-page .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<JSON
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "scan_lock_dir": "$TMP_DIR/cache/locks",
   "whm_scan_max_seconds": 90,
@@ -22,20 +22,25 @@ cat > "$TMP_DIR/config.json" <<JSON
 JSON
 
 whm_env=(
+  "PERL5LIB=$ROOT_DIR/tests/lib"
   "HELP4_DU_CONFIG=$TMP_DIR/config.json"
   "HELP4_DU_CACHE_DIR=$TMP_DIR/cache"
   "REMOTE_USER=root"
   "QUERY_STRING="
 )
-whm_html="$(env "${whm_env[@]}" "$ROOT_DIR/src/whm/index.cgi")"
+whm_html="$(env "${whm_env[@]}" perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'id="whm-left-navigation"' <<<"$whm_html"
+grep -q 'id="whm-right-content"' <<<"$whm_html"
+test "$(grep -o '<!doctype' <<<"$whm_html" | wc -l | tr -d ' ')" = "1"
+test "$(grep -o '<html' <<<"$whm_html" | wc -l | tr -d ' ')" = "1"
 whm_nonce="$(sed -n 's/.*name="action_nonce" value="\([0-9a-f]*\)".*/\1/p' <<<"$whm_html" | head -n 1)"
 grep -Eq '^[0-9a-f]{64}$' <<<"$whm_nonce"
 
-whm_get="$(env "${whm_env[@]}" QUERY_STRING=refresh=1 "$ROOT_DIR/src/whm/index.cgi")"
+whm_get="$(env "${whm_env[@]}" QUERY_STRING=refresh=1 perl "$ROOT_DIR/src/whm/index.cgi")"
 grep -q 'Request rejected' <<<"$whm_get"
 
 whm_body="save_settings=1&action_nonce=$whm_nonce&display_name=Secured+Portal"
-whm_post="$(printf '%s' "$whm_body" | env "${whm_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_body}" "$ROOT_DIR/src/whm/index.cgi")"
+whm_post="$(printf '%s' "$whm_body" | env "${whm_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_body}" perl "$ROOT_DIR/src/whm/index.cgi")"
 grep -q 'Settings saved' <<<"$whm_post"
 grep -q '<h1>Secured Portal</h1>' <<<"$whm_post"
 

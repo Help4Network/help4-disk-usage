@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<'JSON'
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "whm_scan_max_seconds": 90,
   "cpanel_refreshes_per_hour": 3,
@@ -20,11 +20,19 @@ cat > "$TMP_DIR/config.json" <<'JSON'
 }
 JSON
 
-whm_html="$(HELP4_DU_CONFIG="$TMP_DIR/config.json" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" REMOTE_USER=root QUERY_STRING= "$ROOT_DIR/src/whm/index.cgi")"
+whm_html="$(PERL5LIB="$ROOT_DIR/tests/lib" HELP4_DU_CONFIG="$TMP_DIR/config.json" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" REMOTE_USER=root QUERY_STRING= perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'id="whm-left-navigation"' <<<"$whm_html"
+grep -q 'id="whm-right-content"' <<<"$whm_html"
 grep -q '<h1>Storage Portal</h1>' <<<"$whm_html"
 grep -q 'href="https://help4network.com/"' <<<"$whm_html"
 grep -q 'Help4 Network' <<<"$whm_html"
 grep -q 'Update manifest URL' <<<"$whm_html"
+grep -q "WRAPPER 'master_templates/master.tmpl'" "$ROOT_DIR/src/whm/templates/index.tmpl"
+grep -q 'help4-disk-usage-whm.css' "$ROOT_DIR/src/whm/templates/index.tmpl"
+if grep -Eq '^[[:space:]]*(body|html|h1|h2|table|th|td)[[:space:],{]' "$ROOT_DIR/src/static/help4-disk-usage-whm.css"; then
+  echo "WHM stylesheet contains an unscoped global selector." >&2
+  exit 1
+fi
 
 cpanel_html="$(HELP4_DU_CONFIG="$TMP_DIR/config.json" HELP4_DU_ACCOUNT_CACHE_DIR="$TMP_DIR/account-cache" QUERY_STRING= "$ROOT_DIR/src/cpanel/index.live.pl")"
 grep -q '<h1>Storage Portal</h1>' <<<"$cpanel_html"

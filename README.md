@@ -28,6 +28,7 @@ Help4 Disk Usage is designed around background scans, bounded runtime, visible t
 src/bin/help4-disk-usage-scan                         Scanner and JSON cache writer
 src/bin/help4-disk-usage-update                       Backup-first release checker/updater
 src/whm/index.cgi                                     WHM root/reseller dashboard
+src/whm/templates/index.tmpl                          Native WHM master-template wrapper
 src/cpanel/index.live.pl                              cPanel account page
 src/static/                                           Shared UI assets
 packaging/                                            cPanel/WHM plugin metadata
@@ -141,8 +142,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.3.tar.gz
-cd help4-disk-usage-0.3.3
+tar -xzf help4-disk-usage-0.3.4.tar.gz
+cd help4-disk-usage-0.3.4
 sudo ./install.sh
 ```
 
@@ -152,12 +153,13 @@ The installer:
 2. Creates a timestamped backup under `/root/help4-disk-usage-install-backups/`.
 3. Installs the scanner under `/usr/local/cpanel/3rdparty/help4-disk-usage/`.
 4. Installs the WHM CGI under `/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/`.
-5. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
-6. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
-7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
-8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits, display-name override, footer prefix, release URL, and update manifest URL.
-9. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
-10. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version, release URL, update manifest URL, and backup path.
+5. Installs the WHM Template Toolkit wrapper under `/usr/local/cpanel/whostmgr/docroot/templates/help4_disk_usage/` so the dashboard stays inside WHM's normal navigation shell.
+6. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
+7. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
+8. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
+9. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits, display-name override, footer prefix, release URL, and update manifest URL.
+10. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
+11. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version, release URL, update manifest URL, and backup path.
 
 ## Updates
 
@@ -540,6 +542,7 @@ This package follows public cPanel and WHMCS module conventions:
 - cPanel interface registration uses `install.json`.
 - cPanel Jupiter links target a `*.live.pl` page.
 - WHM plugin files are installed below `whostmgr/docroot/cgi`.
+- WHM output uses cPanel's bundled Perl and `master_templates/master.tmpl`, preserving the normal left navigation and right-side content area.
 - Runtime code is stored below `/usr/local/cpanel/3rdparty/help4-disk-usage`.
 - WHMCS integration is an addon module under `modules/addons/help4_disk_usage`.
 - WHMCS admin output uses the addon module `_output` function.
@@ -556,6 +559,8 @@ References:
 - [WHMCS Client Area Output](https://developers.whmcs.com/addon-modules/client-area-output/)
 - [WHMCS Module Hooks](https://developers.whmcs.com/hooks/module-hooks/)
 - [cPanel WHM AppConfig Configuration](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-appconfig-configuration-file)
+- [cPanel WHM Plugin Interfaces](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-plugin-files/guide-to-whm-plugins-interfaces/)
+- [cPanel WHM Plugin Files](https://api.docs.cpanel.net/guides/guide-to-whm-plugins/guide-to-whm-plugins-plugin-files/)
 - [cPanel Plugin Installation](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins)
 
 ## Tests

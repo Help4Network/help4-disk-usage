@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/local/cpanel/3rdparty/bin/perl
 use strict;
 use warnings;
 use File::Spec;
@@ -90,10 +90,27 @@ my @accounts = grep { allowed($_, $is_root, \%owned) } read_account_caches();
     || ($a->{user} || '') cmp ($b->{user} || '')
 } @accounts;
 
+my $page_content = page_content(\@accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce);
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
-print page(\@accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce);
+render_whm_page($page_content, $config->{display_name} || $APP);
 
-sub page {
+sub render_whm_page {
+    my ($content, $title) = @_;
+    die "Refusing to nest a standalone document inside the WHM shell.\n"
+        if $content =~ /<!doctype|<html\b|<body\b/i;
+    require Cpanel::Template;
+    Cpanel::Template::process_template(
+        'whostmgr',
+        {
+            template_file => 'help4_disk_usage/index.tmpl',
+            print         => 1,
+            page_title    => $title,
+            page_content  => $content,
+        }
+    );
+}
+
+sub page_content {
     my ($accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce) = @_;
     my $total_bytes = 0;
     my $total_inodes = 0;
@@ -113,15 +130,7 @@ sub page {
     my $settings = $is_root ? settings_panel($config, $nonce) : '';
     my $updates = $is_root ? update_panel($config, $update_status, $nonce) : '';
     return <<"HTML";
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>$display_name</title>
-  <link rel="stylesheet" href="/help4-disk-usage/help4-disk-usage.css">
-</head>
-<body>
-  <main class="wrap">
+  <main class="h4du-page wrap">
     <header class="topbar">
       <div>
         <h1>$display_name</h1>
@@ -152,8 +161,6 @@ sub page {
     $updates
     @{[credit_html($config)]}
   </main>
-</body>
-</html>
 HTML
 }
 
@@ -281,7 +288,7 @@ sub default_config {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => 'Disk Usage Audit',
         credit_prefix                 => 'Built by',
-        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz',
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz',
         update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
@@ -303,7 +310,7 @@ sub load_config {
         || File::Spec->catdir($CACHE_DIR, 'locks');
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
-    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.3.tar.gz';
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz';
     $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
