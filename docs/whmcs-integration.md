@@ -66,21 +66,12 @@ Set `WHMCS_ROOT` to the real WHMCS document root. The directory should contain `
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-export BACKUP_DIR=/var/backups/help4-disk-usage
 test -f "$WHMCS_ROOT/init.php"
 test -d "$WHMCS_ROOT/modules/addons"
-install -d -m 0700 "$BACKUP_DIR"
 ```
 
-Back up an existing copy before replacing it:
-
-```bash
-if [ -d "$WHMCS_ROOT/modules/addons/help4_disk_usage" ]; then
-  backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-  tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
-  chmod 0600 "$backup"
-fi
-```
+Keep the previous immutable release zip and its checksum as the rollback source. The
+normal install and upgrade procedure does not create filesystem snapshots.
 
 Extract the standalone package:
 
@@ -228,7 +219,7 @@ The client navigation link is added below **Services** when **Client Area Report
 Do not deactivate the addon for a normal upgrade. WHMCS detects a new addon version from the module configuration and calls the addon upgrade function the first time the updated module is accessed.
 
 1. Verify the new zip checksum.
-2. Back up the current module directory.
+2. Retain the previous immutable release zip and checksum for rollback.
 3. Extract the new zip over `modules/addons/`.
 4. Restore the expected WHMCS ownership and permissions.
 5. Open **System Settings > Addon Modules**, save the Help4 Disk Usage settings, and then open the addon.
@@ -238,11 +229,6 @@ Example:
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-export BACKUP_DIR=/var/backups/help4-disk-usage
-install -d -m 0700 "$BACKUP_DIR"
-backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
-chmod 0600 "$backup"
 unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
   "$WHMCS_ROOT/modules/addons/help4_disk_usage"
@@ -252,10 +238,9 @@ If a release adds `hooks.php` to an older installation, re-save the addon settin
 
 ## Remove the Addon
 
-1. Back up the WHMCS database and `modules/addons/help4_disk_usage`.
-2. Open **System Settings > Addon Modules**.
-3. Deactivate **Help4 Disk Usage**.
-4. Remove or archive `modules/addons/help4_disk_usage`.
+1. Open **System Settings > Addon Modules**.
+2. Deactivate **Help4 Disk Usage**.
+3. Remove `modules/addons/help4_disk_usage`.
 
 Deactivation intentionally retains the three `mod_help4_disk_usage_*` tables so support history is not silently destroyed. Remove those tables only through a separately reviewed database change after confirming no history is required.
 

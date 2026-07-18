@@ -150,16 +150,17 @@ sudo ./install.sh
 The installer:
 
 1. Verifies it is running as root on a cPanel server.
-2. Creates a timestamped backup under `/root/help4-disk-usage-install-backups/`.
-3. Installs the scanner under `/usr/local/cpanel/3rdparty/help4-disk-usage/`.
-4. Installs the WHM CGI under `/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/`.
-5. Installs the WHM Template Toolkit wrapper under `/usr/local/cpanel/whostmgr/docroot/templates/help4_disk_usage/` so the dashboard stays inside WHM's normal navigation shell.
-6. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
-7. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
-8. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
-9. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits, display-name override, footer prefix, release URL, and update manifest URL.
-10. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
-11. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version, release URL, update manifest URL, and backup path.
+2. Installs the scanner under `/usr/local/cpanel/3rdparty/help4-disk-usage/`.
+3. Installs the WHM CGI under `/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage/`.
+4. Installs the WHM Template Toolkit wrapper under `/usr/local/cpanel/whostmgr/docroot/templates/help4_disk_usage/` so the dashboard stays inside WHM's normal navigation shell.
+5. Registers WHM AppConfig from `/var/cpanel/apps/help4_disk_usage.conf`.
+6. Installs the cPanel Jupiter plugin icon from `packaging/install.json`.
+7. Adds `/etc/cron.d/help4-disk-usage` for background refresh every six hours.
+8. Creates `/var/cpanel/help4-disk-usage/config.json` for scan limits, display-name override, footer prefix, release URL, and update manifest URL.
+9. Creates `/var/cpanel/help4-disk-usage/locks/scan.lock` so foreground scans run one at a time.
+10. Writes `/var/cpanel/help4-disk-usage/install.json` with the installed version and release channel.
+
+Git tags and checksummed release archives are the default rollback source. The installer does not create filesystem snapshots unless `HELP4_DU_BACKUP_DIR` is explicitly set.
 
 ## Updates
 
@@ -169,7 +170,7 @@ Installed cPanel servers include:
 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update
 ```
 
-The updater reads the configured update manifest, compares the published version with the installed scanner, and avoids downloading the package when a check already proves the server is current. Apply operations require the manifest's SHA-256 digest to match the downloaded package before extraction. The normal installer creates a backup under `/root/help4-disk-usage-install-backups/` before replacing files.
+The updater reads the configured update manifest, compares the published version with the installed scanner, and avoids downloading the package when a check already proves the server is current. Apply operations require the manifest's SHA-256 digest to match the downloaded package before extraction. Roll back by reinstalling a prior immutable tag; automatic filesystem snapshots are disabled by default.
 
 Manual check:
 
@@ -201,7 +202,7 @@ Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 sudo ./uninstall.sh
 ```
 
-The uninstaller snapshots installed files, calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. It intentionally leaves scan cache data in `/var/cpanel/help4-disk-usage` so operators can decide whether to retain or delete history.
+The uninstaller calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. It intentionally leaves scan cache data in `/var/cpanel/help4-disk-usage` so operators can decide whether to retain or delete history. Set `HELP4_DU_BACKUP_DIR` only when an explicit filesystem snapshot is required.
 
 ## Install the WHMCS Addon
 
@@ -218,19 +219,12 @@ Verify the package:
 sha256sum -c help4-disk-usage-whmcs-<version>.zip.sha256
 ```
 
-Set the WHMCS root, back up any existing module, and extract the package:
+Set the WHMCS root and extract the package. A prior immutable release ZIP is the rollback source:
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-export BACKUP_DIR=/var/backups/help4-disk-usage
 test -f "$WHMCS_ROOT/init.php"
-install -d -m 0700 "$BACKUP_DIR"
-if [ -d "$WHMCS_ROOT/modules/addons/help4_disk_usage" ]; then
-  backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-  tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
-  chmod 0600 "$backup"
-fi
-unzip -q help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
+unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
   "$WHMCS_ROOT/modules/addons/help4_disk_usage"
 php -l "$WHMCS_ROOT/modules/addons/help4_disk_usage/help4_disk_usage.php"
@@ -277,15 +271,10 @@ The detailed operator guide, including server-record preparation, fingerprint pi
 
 ## Upgrade the WHMCS Addon
 
-Do not deactivate the addon for a normal upgrade. Verify the new zip, back up `modules/addons/help4_disk_usage`, and extract the new package over `modules/addons/`. Then save the addon settings and open the addon so WHMCS detects the changed configuration version and runs the module upgrade function.
+Do not deactivate the addon for a normal upgrade. Verify the new ZIP and extract it over `modules/addons/`. Then save the addon settings and open the addon so WHMCS detects the changed configuration version and runs the module upgrade function. Roll back by reinstalling the previous immutable release ZIP.
 
 ```bash
 export WHMCS_ROOT=/path/to/whmcs
-export BACKUP_DIR=/var/backups/help4-disk-usage
-install -d -m 0700 "$BACKUP_DIR"
-backup="$BACKUP_DIR/whmcs-addon-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-tar -czf "$backup" -C "$WHMCS_ROOT/modules/addons" help4_disk_usage
-chmod 0600 "$backup"
 unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
 chown -R --reference="$WHMCS_ROOT/modules/addons" \
   "$WHMCS_ROOT/modules/addons/help4_disk_usage"
@@ -314,7 +303,7 @@ For each cPanel server, WHMCS provides:
 
 - **Check**: verifies expected plugin files exist and compares installed/available versions from the configured update manifest.
 - **Deploy**: downloads the package named by the update manifest, verifies its SHA-256 digest, and runs `install.sh`.
-- **Update**: runs the cPanel-side updater when present, or falls back to the backup-first installer for older installs.
+- **Update**: runs the cPanel-side updater when present, or falls back to the checksummed installer for older installs.
 - **Sync**: runs a bounded scanner command and imports JSON summaries into WHMCS.
 
 One-click actions require:
@@ -353,7 +342,7 @@ Customers see only their own mapped services and support-safe remediation hints.
 
 ## Remove the WHMCS Addon
 
-Back up the WHMCS database and module directory, deactivate **Help4 Disk Usage** under **System Settings > Addon Modules**, and then remove or archive `modules/addons/help4_disk_usage`.
+Deactivate **Help4 Disk Usage** under **System Settings > Addon Modules**, and then remove `modules/addons/help4_disk_usage`.
 
 Deactivation intentionally retains the `mod_help4_disk_usage_*` tables so support history is not silently destroyed. Removing the WHMCS addon does not uninstall the cPanel/WHM plugin from managed servers.
 
@@ -468,7 +457,7 @@ Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 - visible timestamps
 - top-N offender lists
 - WHMCS sync limits for staged rollout
-- backup-first update checks before repo/release pulls
+- checksum-verified update checks before release pulls
 
 ## Screenshots
 
@@ -510,7 +499,7 @@ Verified on Genie:
 - Bounded sample scans without timeout.
 - Cron installed.
 
-The live rollout used Genie as the first validation target, followed by gohoster02 and dolce01 after the Genie and WHMCS review gates passed. Operators should still use the backup, staged-limit, and verification gates in [`docs/rollout.md`](docs/rollout.md) for every environment.
+The live rollout used Genie as the first validation target, followed by gohoster02 and dolce01 after the Genie and WHMCS review gates passed. Operators should still use the immutable-release, staged-limit, and verification gates in [`docs/rollout.md`](docs/rollout.md) for every environment.
 
 ## Marketing Notes
 

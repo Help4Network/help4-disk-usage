@@ -8,7 +8,8 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="/root/help4-disk-usage-uninstall-backups/${STAMP}"
+BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
+BACKUP_DIR=""
 
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 WHM_CGI_DIR="/usr/local/cpanel/whostmgr/docroot/cgi/help4_disk_usage"
@@ -19,13 +20,17 @@ CPANEL_DIR="/usr/local/cpanel/base/frontend/jupiter/help4_disk_usage"
 APP_CONF="/var/cpanel/apps/help4_disk_usage.conf"
 CRON_FILE="/etc/cron.d/help4-disk-usage"
 
-mkdir -p "$BACKUP_DIR"
-for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$WHM_ICON" "$CPANEL_DIR" "$APP_CONF" "$CRON_FILE"; do
-  if [ -e "$path" ]; then
-    backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
-    cp -a "$path" "$BACKUP_DIR/$backup_name"
-  fi
-done
+if [ -n "$BACKUP_ROOT" ]; then
+  BACKUP_DIR="${BACKUP_ROOT%/}/${STAMP}"
+  mkdir -p "$BACKUP_DIR"
+  chmod 0700 "$BACKUP_DIR"
+  for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$WHM_ICON" "$CPANEL_DIR" "$APP_CONF" "$CRON_FILE"; do
+    if [ -e "$path" ]; then
+      backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
+      cp -a "$path" "$BACKUP_DIR/$backup_name"
+    fi
+  done
+fi
 
 if [ -x /usr/local/cpanel/scripts/uninstall_plugin ]; then
   /usr/local/cpanel/scripts/uninstall_plugin "$ROOT_DIR/packaging" --theme=jupiter >/dev/null || true
@@ -39,5 +44,7 @@ rm -rf "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$CPANEL_
 rm -f "$WHM_ICON" "$CRON_FILE"
 
 echo "Help4 Disk Usage uninstalled."
-echo "Backup/snapshot: $BACKUP_DIR"
+if [ -n "$BACKUP_DIR" ]; then
+  echo "Backup/snapshot: $BACKUP_DIR"
+fi
 echo "Scan cache remains at /var/cpanel/help4-disk-usage; remove it manually if desired."

@@ -9,8 +9,8 @@ Genie is the first live target. Do not deploy this plugin to gohoster or dolce01
   - `/usr/local/cpanel/bin/register_appconfig`
   - `/usr/local/cpanel/scripts/install_plugin`
   - `/usr/local/cpanel/scripts/uninstall_plugin`
-- Snapshot existing plugin paths before install.
-- Confirm no previous `help4_disk_usage` AppConfig registration or preserve it in the snapshot.
+- Record the currently installed version and immutable release tag before install.
+- Confirm whether a previous `help4_disk_usage` AppConfig registration exists.
 
 ## Install
 
@@ -23,7 +23,7 @@ cd help4-disk-usage-0.1.0
 Record:
 
 - install output
-- backup/snapshot path
+- previous release tag
 - AppConfig registration status
 - cPanel plugin install status
 - cron file content
@@ -67,7 +67,6 @@ Save under `outputs/genie-validation-<timestamp>/`:
 ## Rollback
 
 ```bash
-./uninstall.sh
+/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-update --check
+# Reinstall the required prior immutable release tag if rollback is needed.
 ```
-
-Use the install backup path if manual restore is required.

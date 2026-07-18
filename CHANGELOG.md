@@ -5,7 +5,8 @@
 - Embedded the WHM dashboard in cPanel's native master template so the normal WHM navigation remains available.
 - Moved production CGI execution to cPanel's bundled Perl runtime and installed a dedicated Template Toolkit interface file.
 - Added WHM-shell regression coverage that rejects nested standalone documents and unscoped CSS selectors.
-- Added backup, installation, and removal handling for the WHM template directory.
+- Added installation and removal handling for the WHM template directory.
+- Made deployment filesystem snapshots opt-in; immutable Git tags are the default rollback source.
 
 ## 0.3.3
 

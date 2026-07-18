@@ -26,6 +26,7 @@ jobs:
           bash -n scripts/package.sh
           bash -n scripts/package-whmcs.sh
           bash -n scripts/build-tutorial-pack.sh
+          bash -n tests/backup_policy.sh
           bash -n tests/whmcs_package.sh
 
       - name: Perl syntax
@@ -44,6 +45,7 @@ jobs:
         run: |
           ./tests/smoke_scanner.sh
           ./tests/security_boundaries.sh
+          ./tests/backup_policy.sh
           ./tests/branding_update_contract.sh
           ./tests/request_security.sh
           ./tests/whmcs_package.sh

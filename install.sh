@@ -8,7 +8,8 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="/root/help4-disk-usage-install-backups/${STAMP}"
+BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
+BACKUP_DIR=""
 VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$ROOT_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
 RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz}"
 UPDATE_MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json}"
@@ -33,15 +34,19 @@ for required in /usr/local/cpanel/bin/register_appconfig /usr/local/cpanel/scrip
   fi
 done
 
-mkdir -p "$BACKUP_DIR"
-for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$CPANEL_DIR" "$CONFIG_FILE" "$APP_CONF" "$CRON_FILE"; do
-  if [ -e "$path" ]; then
-    backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
-    cp -a "$path" "$BACKUP_DIR/$backup_name"
+if [ -n "$BACKUP_ROOT" ]; then
+  BACKUP_DIR="${BACKUP_ROOT%/}/${STAMP}"
+  mkdir -p "$BACKUP_DIR"
+  chmod 0700 "$BACKUP_DIR"
+  for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$CPANEL_DIR" "$CONFIG_FILE" "$APP_CONF" "$CRON_FILE"; do
+    if [ -e "$path" ]; then
+      backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
+      cp -a "$path" "$BACKUP_DIR/$backup_name"
+    fi
+  done
+  if [ -e "$WHM_ICON_DIR/help4-disk-usage.png" ]; then
+    cp -a "$WHM_ICON_DIR/help4-disk-usage.png" "$BACKUP_DIR/usr_local_cpanel_whostmgr_docroot_addon_plugins_help4-disk-usage.png"
   fi
-done
-if [ -e "$WHM_ICON_DIR/help4-disk-usage.png" ]; then
-  cp -a "$WHM_ICON_DIR/help4-disk-usage.png" "$BACKUP_DIR/usr_local_cpanel_whostmgr_docroot_addon_plugins_help4-disk-usage.png"
 fi
 
 install -d -m 0755 "$APP_DIR/bin" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$WHM_ICON_DIR" "$CPANEL_DIR" /var/cpanel/apps
@@ -129,6 +134,8 @@ chmod 0644 "$INSTALL_META"
 
 echo "Help4 Disk Usage installed."
 echo "Version: $VERSION"
-echo "Backup/snapshot: $BACKUP_DIR"
+if [ -n "$BACKUP_DIR" ]; then
+  echo "Backup/snapshot: $BACKUP_DIR"
+fi
 echo "WHM URL path: /cgi/help4_disk_usage/index.cgi"
 echo "cPanel Jupiter path: help4_disk_usage/index.live.pl"

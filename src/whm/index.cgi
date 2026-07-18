@@ -209,7 +209,7 @@ sub update_panel {
     <section>
       <h2>Repository Updates</h2>
       $status_html
-      <p class="muted">Updates read the configured manifest when available, download the selected release tarball, compare versions, run the normal backup-first installer, and preserve scan cache/config. Use this after publishing a new release or changing update channels.</p>
+      <p class="muted">Updates read the configured manifest when available, download the selected immutable release tarball, verify its checksum, compare versions, and preserve scan cache/config. Filesystem snapshots are created only when the installer is given an explicit backup directory.</p>
       <div class="actions">
         @{[action_form('update_check', 'Check for update', $nonce)]}
         @{[action_form('update_apply', 'Apply update', $nonce)]}

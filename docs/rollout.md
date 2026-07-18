@@ -48,7 +48,7 @@ HELP4_DU_UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/hel
 ./install.sh
 ```
 
-The installer snapshots existing plugin files before replacing them.
+The installer does not create a filesystem snapshot by default. Prior immutable Git tags are the rollback source. Set `HELP4_DU_BACKUP_DIR` only when an operator explicitly requires a snapshot.
 
 ## Production Update Channel
 

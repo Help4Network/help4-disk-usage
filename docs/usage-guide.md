@@ -40,7 +40,7 @@ Use that article when you need a plain-language explanation for hosting teams, s
 - Mention that root can tune scan limits and package-specific overrides in WHM.
 - Mention that WHMCS admins get an admin-home health widget for quick checks.
 - Mention that WHMCS Server Health is the admin/support view for server coverage, scan freshness, and failures.
-- Mention that updates are backup-first and should use a reviewed update manifest whose package URL points at immutable release tarballs for production.
+- Mention that updates are checksum-verified and should use a reviewed update manifest whose package URL points at immutable release tarballs for production. Prior tags are the rollback source.
 - Mention that WHMCS client rows are scoped to the logged-in client's current mapped hosting services.
 
 ## Version Note
