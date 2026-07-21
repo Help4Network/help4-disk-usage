@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<'JSON'
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "whm_scan_max_seconds": 90,
   "cpanel_refreshes_per_hour": 3,
@@ -43,6 +43,11 @@ test "$(grep -o '<h1' <<<"$cpanel_html" | wc -l | tr -d ' ')" = "1"
 grep -q '<h1>Storage Portal</h1>' <<<"$cpanel_html"
 grep -q 'href="https://help4network.com/"' <<<"$cpanel_html"
 grep -q 'Help4 Network' <<<"$cpanel_html"
+cpanel_group="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->[0]{group_id} || "";' "$ROOT_DIR/packaging/install.json")"
+test "$cpanel_group" = "files"
+grep -q 'https://help4network.com/assets/img/logo.png' "$ROOT_DIR/src/static/help4-disk-usage.svg"
+grep -q 'data:image/png;base64,' "$ROOT_DIR/src/static/help4-disk-usage.svg"
+file "$ROOT_DIR/src/static/help4-disk-usage.png" | grep -q 'PNG image data, 48 x 48, 8-bit/color RGBA'
 head -n 1 "$ROOT_DIR/src/cpanel/index.live.pl" | grep -qx '#!/usr/local/cpanel/3rdparty/bin/perl'
 grep -q 'Cpanel::LiveAPI->new' "$ROOT_DIR/src/cpanel/index.live.pl"
 grep -q '\$cpanel->header' "$ROOT_DIR/src/cpanel/index.live.pl"

@@ -1,7 +1,7 @@
 [
   {
     "icon": "help4-disk-usage.svg",
-    "group_id": "metrics",
+    "group_id": "files",
     "order": 10020,
     "name": "Help4 Disk Usage",
     "type": "link",

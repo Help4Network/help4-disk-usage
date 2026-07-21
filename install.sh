@@ -11,7 +11,7 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
 BACKUP_DIR=""
 VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$ROOT_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
-RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz}"
+RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz}"
 UPDATE_MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json}"
 
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
@@ -65,7 +65,7 @@ if [ ! -e "$CONFIG_FILE" ]; then
    "cpanel_scan_max_seconds" : 60,
    "display_name" : "Disk Usage Audit",
    "package_overrides" : {},
-   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz",
+   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz",
    "scan_lock_dir" : "/var/cpanel/help4-disk-usage/locks",
    "update_manifest_url" : "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
    "whm_scan_max_seconds" : 90

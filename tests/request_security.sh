@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<JSON
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "scan_lock_dir": "$TMP_DIR/cache/locks",
   "whm_scan_max_seconds": 90,

@@ -10,7 +10,7 @@ use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use Sys::Hostname qw(hostname);
 
-our $VERSION = '0.3.5';
+our $VERSION = '0.3.6';
 
 my %opt = (
     scope          => 'all',
