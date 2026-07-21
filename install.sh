@@ -108,6 +108,13 @@ install -m 0644 "$ROOT_DIR/packaging/help4_disk_usage.conf" /var/cpanel/apps/hel
 /usr/local/cpanel/bin/register_appconfig /var/cpanel/apps/help4_disk_usage.conf
 
 /usr/local/cpanel/scripts/install_plugin "$ROOT_DIR/packaging" >/dev/null
+if [ -x /usr/local/cpanel/bin/sprite_generator ]; then
+  /usr/local/cpanel/bin/sprite_generator \
+    --theme jupiter \
+    --source-directory /usr/local/cpanel/base/frontend/jupiter/assets/application_icons \
+    --target-directory /usr/local/cpanel/base/frontend/jupiter/assets/application_icons \
+    >/dev/null
+fi
 
 cat > "$CRON_FILE" <<'CRON'
 SHELL=/bin/bash

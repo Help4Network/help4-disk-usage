@@ -48,6 +48,9 @@ test "$cpanel_group" = "files"
 grep -q 'https://help4network.com/assets/img/logo.png' "$ROOT_DIR/src/static/help4-disk-usage.svg"
 grep -q 'data:image/png;base64,' "$ROOT_DIR/src/static/help4-disk-usage.svg"
 file "$ROOT_DIR/src/static/help4-disk-usage.png" | grep -q 'PNG image data, 48 x 48, 8-bit/color RGBA'
+grep -q '/usr/local/cpanel/bin/sprite_generator' "$ROOT_DIR/install.sh"
+grep -q -- '--source-directory /usr/local/cpanel/base/frontend/jupiter/assets/application_icons' "$ROOT_DIR/install.sh"
+grep -q -- '--target-directory /usr/local/cpanel/base/frontend/jupiter/assets/application_icons' "$ROOT_DIR/install.sh"
 head -n 1 "$ROOT_DIR/src/cpanel/index.live.pl" | grep -qx '#!/usr/local/cpanel/3rdparty/bin/perl'
 grep -q 'Cpanel::LiveAPI->new' "$ROOT_DIR/src/cpanel/index.live.pl"
 grep -q '\$cpanel->header' "$ROOT_DIR/src/cpanel/index.live.pl"

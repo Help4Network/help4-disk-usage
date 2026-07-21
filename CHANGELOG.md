@@ -4,6 +4,7 @@
 
 - Moved the cPanel entry from the Metrics group into the Files group.
 - Replaced the generic disk glyph with the official Help4 Network H4 mark on cPanel and WHM plugin surfaces.
+- Rebuilds the Jupiter application-icon sprite during installation so branding changes appear immediately after upgrades.
 - Recorded the official logo source and checksum, and added packaging tests for the Files placement and branded assets.
 - Updated the generated cPanel tutorial fixture to show the plugin in Files with the production icon.
 
