@@ -12,7 +12,7 @@ Use this guide when pushing Help4 Disk Usage from the public repo to managed cPa
 
 1. Commit and push the release code.
 2. Let CI pass.
-3. Tag the immutable release, for example `v0.3.4`, and push the tag.
+3. Tag the immutable release, for example `v0.3.5`, and push the tag.
 4. Download the exact tag archive, calculate its SHA-256, and publish that digest in `update.json` on the release channel.
 5. Confirm `update.json` uses the tag archive URL, not a moving branch archive.
 6. On each target server, run:
@@ -43,7 +43,7 @@ expected="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{sha256}'
 printf '%s  %s\n' "$expected" help4-disk-usage.tar.gz | sha256sum -c -
 tar -xzf help4-disk-usage.tar.gz
 cd help4-disk-usage-*
-HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz" \
+HELP4_DU_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz" \
 HELP4_DU_UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json" \
 ./install.sh
 ```

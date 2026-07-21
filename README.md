@@ -65,6 +65,7 @@ CHANGELOG.md                                          Release history
 ### cPanel
 
 - Account-scoped page in Jupiter.
+- Uses cPanel's LiveAPI lifecycle so the standard Jupiter navigation and authenticated session remain intact.
 - Scans only the authenticated account home directory.
 - Renders relative paths only.
 - Shows cleanup categories and plain remediation hints.
@@ -142,8 +143,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.4.tar.gz
-cd help4-disk-usage-0.3.4
+tar -xzf help4-disk-usage-0.3.5.tar.gz
+cd help4-disk-usage-0.3.5
 sudo ./install.sh
 ```
 
@@ -569,7 +570,7 @@ Run syntax checks:
 ```bash
 perl -c src/bin/help4-disk-usage-scan
 perl -c src/whm/index.cgi
-perl -c src/cpanel/index.live.pl
+PERL5LIB=tests/lib perl -c src/cpanel/index.live.pl
 php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
 php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
 bash -n scripts/package-whmcs.sh

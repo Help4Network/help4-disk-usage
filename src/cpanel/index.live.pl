@@ -1,6 +1,7 @@
-#!/usr/bin/env perl
+#!/usr/local/cpanel/3rdparty/bin/perl
 use strict;
 use warnings;
+use Cpanel::LiveAPI ();
 use File::Path qw(make_path);
 use File::Spec;
 use Fcntl qw(:flock);
@@ -9,29 +10,33 @@ use JSON::PP qw(decode_json);
 my $APP = 'Help4 Disk Usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
 my $GLOBAL_CONFIG = $ENV{HELP4_DU_CONFIG} || '/var/cpanel/help4-disk-usage/config.json';
+my $cpanel = Cpanel::LiveAPI->new();
+my $liveapi_ended = 0;
+END {
+    if ($cpanel && !$liveapi_ended) {
+        eval { $cpanel->end() };
+        $liveapi_ended = 1;
+    }
+}
 my %q = request_params();
 my $remote_user = $ENV{REMOTE_USER} || $ENV{CPANEL_USER} || '';
 if ($remote_user ne '' && $remote_user !~ /\A[A-Za-z0-9_.-]+\z/) {
-    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nInvalid authenticated account identity.\n";
-    exit 0;
+    reject_request('Invalid authenticated account identity.');
 }
 my $euid_user = getpwuid($>) || getpwuid($<) || '';
 $euid_user = '' unless $euid_user =~ /\A[A-Za-z0-9_.-]+\z/;
 my $runtime_account = $euid_user && $euid_user !~ /\A(?:root|cpanel|nobody)\z/ ? $euid_user : '';
 if ($remote_user && $runtime_account && $remote_user ne $runtime_account) {
-    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAccount identity mismatch.\n";
-    exit 0;
+    reject_request('Account identity mismatch.');
 }
 my $user = $runtime_account || $remote_user;
 if (!$user || $user =~ /\A(?:root|cpanel|nobody)\z/) {
-    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAuthenticated cPanel account is required.\n";
-    exit 0;
+    reject_request('Authenticated cPanel account is required.');
 }
 my $passwd_home = $user ? (getpwnam($user))[7] : '';
 my $home = $passwd_home || '';
 if (!$home || !-d $home) {
-    print "Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nUnable to resolve the authenticated account home.\n";
-    exit 0;
+    reject_request('Unable to resolve the authenticated account home.');
 }
 my $cache_dir = $ENV{HELP4_DU_ACCOUNT_CACHE_DIR}
     || File::Spec->catdir($home, '.cpanel', 'help4-disk-usage');
@@ -51,27 +56,27 @@ if ($q{refresh} && (($ENV{REQUEST_METHOD} || 'GET') ne 'POST' || !valid_nonce($n
     if (!$allowed) {
         $notice = $message;
     } else {
-    my @cmd = (
-        $SCANNER,
-        '--scope', 'account',
-        '--account', $user,
-        '--home', $home,
-        '--cache-dir', $cache_dir,
-        '--lock-dir', $config->{scan_lock_dir},
-        '--max-seconds', $limits->{cpanel_scan_max_seconds},
-        '--write-cache',
-        '--quiet',
-    );
-    local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
-    system(@cmd);
-    if ($? == 0) {
-        my $fresh = read_json($account_cache) || {};
-        $notice = $fresh->{scan_complete}
-            ? 'Scan refreshed for this account.'
-            : 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.';
-    } else {
-        $notice = 'Scan is already running or returned a non-zero status; existing cache is shown.';
-    }
+        my @cmd = (
+            $SCANNER,
+            '--scope', 'account',
+            '--account', $user,
+            '--home', $home,
+            '--cache-dir', $cache_dir,
+            '--lock-dir', $config->{scan_lock_dir},
+            '--max-seconds', $limits->{cpanel_scan_max_seconds},
+            '--write-cache',
+            '--quiet',
+        );
+        local $ENV{HELP4_DU_LOCK_DIR} = $config->{scan_lock_dir};
+        system(@cmd);
+        if ($? == 0) {
+            my $fresh = read_json($account_cache) || {};
+            $notice = $fresh->{scan_complete}
+                ? 'Scan refreshed for this account.'
+                : 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.';
+        } else {
+            $notice = 'Scan is already running or returned a non-zero status; existing cache is shown.';
+        }
     }
 }
 
@@ -79,7 +84,28 @@ my $data = read_json($account_cache);
 $data = undef if $data && (($data->{user} || '') ne $user);
 
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
+print $cpanel->header($config->{display_name} || $APP);
+print qq{<link rel="stylesheet" href="help4-disk-usage.css">\n};
 print page($data, $notice, $user, $nonce);
+print $cpanel->footer();
+end_liveapi();
+
+sub reject_request {
+    my ($message) = @_;
+    print "Status: 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+    print $cpanel->header('Disk Usage Audit');
+    print qq{<link rel="stylesheet" href="help4-disk-usage.css">\n};
+    print '<div class="h4du-page wrap"><div class="notice">' . h($message) . '</div></div>';
+    print $cpanel->footer();
+    end_liveapi();
+    exit 0;
+}
+
+sub end_liveapi {
+    return if $liveapi_ended;
+    $cpanel->end();
+    $liveapi_ended = 1;
+}
 
 sub page {
     my ($a, $notice, $user, $nonce) = @_;
@@ -87,15 +113,7 @@ sub page {
     my $summary = $a ? summary($a) : '<div class="empty">No account scan cache exists yet.</div>';
     my $display_name = h($config->{display_name} || $APP);
     return <<"HTML";
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>$display_name</title>
-  <link rel="stylesheet" href="help4-disk-usage.css">
-</head>
-<body>
-  <main class="wrap">
+  <div class="h4du-page wrap">
     <header class="topbar">
       <div>
         <h1>$display_name</h1>
@@ -112,9 +130,7 @@ sub page {
     $notice_html
     $summary
     @{[credit_html($config)]}
-  </main>
-</body>
-</html>
+  </div>
 HTML
 }
 

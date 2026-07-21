@@ -41,6 +41,7 @@
 - WHM and cPanel state-changing actions require POST plus a 30-minute server-side nonce.
 - WHM fails closed when cPanel does not supply an authenticated `REMOTE_USER`.
 - cPanel rejects authenticated/runtime identity mismatches and resolves home directories from the system password database.
+- cPanel renders through `Cpanel::LiveAPI` using cPanel's bundled Perl, preserving the authenticated Jupiter wrapper instead of creating a second standalone document.
 - UI performs output escaping for rendered values.
 - WHMCS one-click deploy/check/update/sync uses PHP `ssh2` or WHMCS-bundled phpseclib 2/3, and requires a verified SHA-256 host fingerprint before authentication, a bounded remote command, and a verified remote exit status.
 - The WHMCS dashboard widget requires the `Perform Server Operations` administrator permission.

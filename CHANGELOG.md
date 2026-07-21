@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5
+
+- Embedded the cPanel account dashboard in the supported LiveAPI header/footer lifecycle so Jupiter navigation remains available.
+- Moved cPanel page execution to cPanel's bundled Perl runtime, which provides `Cpanel::LiveAPI`.
+- Reused the fully scoped plugin stylesheet in cPanel to prevent global styles from changing the surrounding Jupiter interface.
+- Added cPanel-shell regression coverage for navigation, duplicate documents, LiveAPI lifecycle calls, request security, and refresh throttling.
+- Replaced the standalone cPanel tutorial mock with a privacy-safe dummy Jupiter interface.
+
 ## 0.3.4
 
 - Embedded the WHM dashboard in cPanel's native master template so the normal WHM navigation remains available.

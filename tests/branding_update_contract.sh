@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<'JSON'
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.4.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "whm_scan_max_seconds": 90,
   "cpanel_refreshes_per_hour": 3,
@@ -30,14 +30,27 @@ grep -q 'Update manifest URL' <<<"$whm_html"
 grep -q "WRAPPER 'master_templates/master.tmpl'" "$ROOT_DIR/src/whm/templates/index.tmpl"
 grep -q 'help4-disk-usage-whm.css' "$ROOT_DIR/src/whm/templates/index.tmpl"
 if grep -Eq '^[[:space:]]*(body|html|h1|h2|table|th|td)[[:space:],{]' "$ROOT_DIR/src/static/help4-disk-usage-whm.css"; then
-  echo "WHM stylesheet contains an unscoped global selector." >&2
+  echo "Shared stylesheet contains an unscoped global selector." >&2
   exit 1
 fi
 
-cpanel_html="$(HELP4_DU_CONFIG="$TMP_DIR/config.json" HELP4_DU_ACCOUNT_CACHE_DIR="$TMP_DIR/account-cache" QUERY_STRING= "$ROOT_DIR/src/cpanel/index.live.pl")"
+cpanel_html="$(PERL5LIB="$ROOT_DIR/tests/lib" HELP4_DU_CONFIG="$TMP_DIR/config.json" HELP4_DU_ACCOUNT_CACHE_DIR="$TMP_DIR/account-cache" QUERY_STRING= perl "$ROOT_DIR/src/cpanel/index.live.pl")"
+grep -q 'id="cpanel-main-navigation"' <<<"$cpanel_html"
+grep -q 'id="cpanel-page-content"' <<<"$cpanel_html"
+test "$(grep -o '<!doctype' <<<"$cpanel_html" | wc -l | tr -d ' ')" = "1"
+test "$(grep -o '<html' <<<"$cpanel_html" | wc -l | tr -d ' ')" = "1"
 grep -q '<h1>Storage Portal</h1>' <<<"$cpanel_html"
 grep -q 'href="https://help4network.com/"' <<<"$cpanel_html"
 grep -q 'Help4 Network' <<<"$cpanel_html"
+head -n 1 "$ROOT_DIR/src/cpanel/index.live.pl" | grep -qx '#!/usr/local/cpanel/3rdparty/bin/perl'
+grep -q 'Cpanel::LiveAPI->new' "$ROOT_DIR/src/cpanel/index.live.pl"
+grep -q '\$cpanel->header' "$ROOT_DIR/src/cpanel/index.live.pl"
+grep -q '\$cpanel->footer' "$ROOT_DIR/src/cpanel/index.live.pl"
+grep -q '\$cpanel->end' "$ROOT_DIR/src/cpanel/index.live.pl"
+if grep -Eq '<!doctype|<html|<body' "$ROOT_DIR/src/cpanel/index.live.pl"; then
+  echo "cPanel plugin contains a standalone document outside the LiveAPI shell." >&2
+  exit 1
+fi
 
 json="$("$ROOT_DIR/src/bin/help4-disk-usage-scan" --fixture-root "$TMP_DIR/home" --cache-dir "$TMP_DIR/cache" --scope all --max-seconds 1 --top 1)"
 JSON_PAYLOAD="$json" perl -MJSON::PP=decode_json -e '

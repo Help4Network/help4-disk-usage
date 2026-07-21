@@ -33,7 +33,7 @@ jobs:
         run: |
           perl -c src/bin/help4-disk-usage-scan
           perl -c src/whm/index.cgi
-          perl -c src/cpanel/index.live.pl
+          PERL5LIB=tests/lib perl -c src/cpanel/index.live.pl
 
       - name: PHP syntax
         run: |
