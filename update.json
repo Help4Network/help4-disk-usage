@@ -1,7 +1,7 @@
 {
-  "version": "0.3.5",
-  "package_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.5.tar.gz",
-  "sha256": "13c094b0b0c666d28c687d154f0a92e118b91382473ae90d4ccd51bd80a75a8f",
+  "version": "0.3.6",
+  "package_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz",
+  "sha256": "63a75fed75b80f65d2fe54f26cde2019988d871a5a39472fd507fecbe1f20652",
   "release_notes_url": "https://github.com/Help4Network/help4-disk-usage/blob/main/CHANGELOG.md",
   "minimum_cpanel_version": "110",
   "notes": "Public update manifest for Help4 Disk Usage. Production installs may mirror this manifest and immutable package into operator-controlled infrastructure."
