@@ -7,7 +7,7 @@ The cPanel and WHM plugin icons use the official H4 mark published in the Help4 
 - Source SHA-256: `dd9076c6cbac05e7ef22b47c5bb0cb050fdb480e081b2f4f07f6b81bdee04685`
 - Packaged PNG SHA-256: `69cd9fd4a616191e8d33440a1d4e69fa38ee00050bba209815eb7821cec9f31e`
 
-The 48x48 PNG is the left 185x185 H4 mark cropped from the published 544x185 transparent logo and resized with Lanczos filtering. The Jupiter SVG embeds that exact packaged PNG so cPanel and WHM show the same mark.
+The 48x48 PNG is the left 185x185 H4 mark cropped from the published 544x185 transparent logo and resized with Lanczos filtering. The Jupiter SVG embeds that exact packaged PNG so cPanel and WHM show the same mark. The byte-identical SVG copies in `src/static/` and `packaging/` are both required: the former is installed with the account application, and cPanel reads the latter while compiling its Jupiter application-icon sprite.
 
 Rebuild command:
 

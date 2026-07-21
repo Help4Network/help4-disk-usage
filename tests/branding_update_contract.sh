@@ -47,6 +47,7 @@ cpanel_group="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->[0]{g
 test "$cpanel_group" = "files"
 grep -q 'https://help4network.com/assets/img/logo.png' "$ROOT_DIR/src/static/help4-disk-usage.svg"
 grep -q 'data:image/png;base64,' "$ROOT_DIR/src/static/help4-disk-usage.svg"
+cmp "$ROOT_DIR/src/static/help4-disk-usage.svg" "$ROOT_DIR/packaging/help4-disk-usage.svg"
 file "$ROOT_DIR/src/static/help4-disk-usage.png" | grep -q 'PNG image data, 48 x 48, 8-bit/color RGBA'
 grep -q '/usr/local/cpanel/bin/sprite_generator' "$ROOT_DIR/install.sh"
 grep -q -- '--source-directory /usr/local/cpanel/base/frontend/jupiter/assets/application_icons' "$ROOT_DIR/install.sh"
