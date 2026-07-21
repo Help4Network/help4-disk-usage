@@ -12,7 +12,7 @@ sub header {
     $title ||= 'cPanel';
     return '<!doctype html><html><head><meta charset="utf-8"><title>' . $title
         . '</title></head><body><nav id="cpanel-main-navigation">Tools</nav>'
-        . '<main id="cpanel-page-content">';
+        . '<main id="cpanel-page-content"><h1>' . $title . '</h1>';
 }
 
 sub footer {

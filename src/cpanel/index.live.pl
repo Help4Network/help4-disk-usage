@@ -116,7 +116,6 @@ sub page {
   <div class="h4du-page wrap">
     <header class="topbar">
       <div>
-        <h1>$display_name</h1>
         <p class="muted">Account view for @{[h($user || 'unknown')]}. Paths are shown relative to your home directory.</p>
       </div>
       <div class="actions">

@@ -13,9 +13,9 @@ function cpanelShell(title, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
     *{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#151923;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     .cp-header{height:58px;background:#20252b;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px}.cp-brand{font-size:21px;font-weight:700}.cp-account{color:#dfe4ea;font-size:13px}
-    .cp-layout{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:942px}.cp-nav{background:#fff;border-right:1px solid #dfe4ea;padding:22px 16px}.cp-nav-title{margin:0 8px 16px;color:#596577;font-size:12px;font-weight:700;text-transform:uppercase}.cp-link{display:block;padding:9px 11px;color:#2c3543;text-decoration:none}.cp-link.selected{background:#eaf2ff;border-left:3px solid #256fda;padding-left:8px;color:#174f9d;font-weight:700}.cp-content{min-width:0;padding:26px 24px;background:#f8f9fb}
+    .cp-layout{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:942px}.cp-nav{background:#fff;border-right:1px solid #dfe4ea;padding:22px 16px}.cp-nav-title{margin:0 8px 16px;color:#596577;font-size:12px;font-weight:700;text-transform:uppercase}.cp-link{display:block;padding:9px 11px;color:#2c3543;text-decoration:none}.cp-link.selected{background:#eaf2ff;border-left:3px solid #256fda;padding-left:8px;color:#174f9d;font-weight:700}.cp-content{min-width:0;padding:26px 24px;background:#f8f9fb}.cp-page-title{max-width:1240px;margin:0 auto 8px;padding:0 16px;font-size:26px;line-height:1.2}
     ${css}
-  </style></head><body><header class="cp-header"><div class="cp-brand">cPanel</div><div class="cp-account">customer01</div></header><div class="cp-layout"><aside class="cp-nav"><div class="cp-nav-title">Tools</div><a class="cp-link">File Manager</a><a class="cp-link">Disk Usage</a><a class="cp-link selected">Help4 Disk Usage</a><a class="cp-link">Email Accounts</a><a class="cp-link">Databases</a></aside><main class="cp-content"><div class="h4du-page wrap">${body}</div></main></div></body></html>`;
+  </style></head><body><header class="cp-header"><div class="cp-brand">cPanel</div><div class="cp-account">customer01</div></header><div class="cp-layout"><aside class="cp-nav"><div class="cp-nav-title">Tools</div><a class="cp-link">File Manager</a><a class="cp-link">Disk Usage</a><a class="cp-link selected">Help4 Disk Usage</a><a class="cp-link">Email Accounts</a><a class="cp-link">Databases</a></aside><main class="cp-content"><h1 class="cp-page-title">${title}</h1><div class="h4du-page wrap">${body}</div></main></div></body></html>`;
 }
 
 function metric(label, value) {
@@ -53,7 +53,7 @@ const whmRoot = whmShell('WHM Disk Usage Audit', `
   <p class="credit">Help4 Disk Usage by Help4 Network</p>`);
 
 const cpanel = cpanelShell('Help4 Disk Usage', `
-  <header class="topbar"><div><h1>Help4 Disk Usage</h1><p class="muted">Account view for customer01. Paths are shown relative to your home directory.</p></div><div class="actions"><a class="button">Refresh scan</a></div></header>
+  <header class="topbar"><div><p class="muted">Account view for customer01. Paths are shown relative to your home directory.</p></div><div class="actions"><a class="button">Refresh scan</a></div></header>
   <div class="notice">Scan refreshed for this account.</div>
   <section class="metrics">
     ${metric('Status', 'check')}
