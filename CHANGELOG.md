@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.7
+
+- Changed the cPanel account refresh action to POST-Redirect-GET so browser reload and back navigation cannot resubmit a scan.
+- Added explicit clean form targets and no-store response headers to prevent stale POST responses and nonce pages from being reused.
+- Made refresh limiting fail closed when rate state cannot be persisted.
+- Added regression coverage proving one POST runs one scan and subsequent cPanel reloads are read-only.
+
 ## 0.3.6
 
 - Moved the cPanel entry from the Metrics group into the Files group.

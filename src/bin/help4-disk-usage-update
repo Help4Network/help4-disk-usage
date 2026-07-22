@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz"
+DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
@@ -26,7 +26,7 @@ Usage:
 
 Output is JSON so WHM and WHMCS can report installed/available versions.
 When a manifest URL is configured, it should return JSON with at least:
-  {"version":"0.3.6","package_url":"https://example/package.tar.gz","sha256":"..."}
+  {"version":"0.3.7","package_url":"https://example/package.tar.gz","sha256":"..."}
 USAGE
 }
 

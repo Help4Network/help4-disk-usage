@@ -10,7 +10,7 @@ cat > "$TMP_DIR/config.json" <<JSON
 {
   "display_name": "Storage Portal",
   "credit_prefix": "Built by",
-  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.6.tar.gz",
+  "release_url": "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz",
   "update_manifest_url": "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
   "scan_lock_dir": "$TMP_DIR/cache/locks",
   "whm_scan_max_seconds": 90,
@@ -80,10 +80,51 @@ if grep -q 'cross-account-secret' <<<"$cpanel_rejected"; then
 fi
 
 cpanel_get="$(env "${cpanel_env[@]}" QUERY_STRING=refresh=1 perl "$ROOT_DIR/src/cpanel/index.live.pl")"
-grep -q 'Request rejected' <<<"$cpanel_get"
+grep -q '^Status: 303 See Other' <<<"$cpanel_get"
+grep -q '^Location: index.live.pl?scan_status=rejected' <<<"$cpanel_get"
+if grep -q '<html' <<<"$cpanel_get"; then
+  echo "Rejected cPanel refresh did not redirect to a clean GET." >&2
+  exit 1
+fi
 
 cpanel_body="refresh=1&action_nonce=$cpanel_nonce"
 cpanel_post="$(printf '%s' "$cpanel_body" | env "${cpanel_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#cpanel_body}" perl "$ROOT_DIR/src/cpanel/index.live.pl")"
-grep -q 'Refresh throttled' <<<"$cpanel_post"
+grep -q '^Status: 303 See Other' <<<"$cpanel_post"
+grep -q '^Location: index.live.pl?scan_status=throttled' <<<"$cpanel_post"
+
+cpanel_throttled="$(env "${cpanel_env[@]}" QUERY_STRING=scan_status=throttled perl "$ROOT_DIR/src/cpanel/index.live.pl")"
+grep -q 'Refresh throttled by the account policy' <<<"$cpanel_throttled"
+grep -q 'Cache-Control: no-store, max-age=0' <<<"$cpanel_throttled"
+grep -q '<form method="post" action="index.live.pl"' <<<"$cpanel_throttled"
+
+cat > "$TMP_DIR/account-cache/rate.json" <<'JSON'
+{"last_attempt":0,"attempts":[]}
+JSON
+cat > "$TMP_DIR/account-cache/accounts/$local_user.json" <<JSON
+{"user":"$local_user","scan_complete":true,"large_files":[]}
+JSON
+cat > "$TMP_DIR/scanner-ok" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'run\n' >> "$HELP4_DU_TEST_SCAN_MARKER"
+SH
+chmod 0755 "$TMP_DIR/scanner-ok"
+
+scan_marker="$TMP_DIR/scanner-runs"
+cpanel_success="$(printf '%s' "$cpanel_body" | env "${cpanel_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" REQUEST_METHOD=POST CONTENT_LENGTH="${#cpanel_body}" perl "$ROOT_DIR/src/cpanel/index.live.pl")"
+grep -q '^Status: 303 See Other' <<<"$cpanel_success"
+grep -q '^Location: index.live.pl?scan_status=refreshed' <<<"$cpanel_success"
+test "$(wc -l < "$scan_marker" | tr -d ' ')" = "1"
+
+cpanel_after_refresh="$(env "${cpanel_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" QUERY_STRING=scan_status=refreshed perl "$ROOT_DIR/src/cpanel/index.live.pl")"
+grep -q 'Scan refreshed for this account' <<<"$cpanel_after_refresh"
+test "$(wc -l < "$scan_marker" | tr -d ' ')" = "1"
+
+cpanel_reload="$(env "${cpanel_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" QUERY_STRING= perl "$ROOT_DIR/src/cpanel/index.live.pl")"
+if grep -q 'Request rejected' <<<"$cpanel_reload"; then
+  echo "A clean cPanel reload rendered a rejected refresh." >&2
+  exit 1
+fi
+test "$(wc -l < "$scan_marker" | tr -d ' ')" = "1"
 
 echo "request security smoke test passed"

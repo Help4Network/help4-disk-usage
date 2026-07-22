@@ -45,16 +45,17 @@ make_path($cache_dir, { mode => 0700 }) unless -d $cache_dir;
 chmod 0700, $cache_dir;
 my $config = load_config();
 my $limits = limits_for_user($user, $config);
-my $notice = '';
+my $request_method = uc($ENV{REQUEST_METHOD} || 'GET');
+my $notice = $request_method eq 'GET' ? notice_for_status($q{scan_status} || '') : '';
 my $nonce = action_nonce($cache_dir);
 
-if ($q{refresh} && (($ENV{REQUEST_METHOD} || 'GET') ne 'POST' || !valid_nonce($nonce, $q{action_nonce} || ''))) {
-    $notice = 'Request rejected. Reload this page and try again.';
+if ($q{refresh} && ($request_method ne 'POST' || !valid_nonce($nonce, $q{action_nonce} || ''))) {
+    redirect_to_get('rejected');
 } elsif ($q{refresh}) {
     make_path(File::Spec->catdir($cache_dir, 'accounts'), { mode => 0700 });
     my ($allowed, $message) = allow_refresh($cache_dir, $limits);
     if (!$allowed) {
-        $notice = $message;
+        redirect_to_get(status_for_refresh_message($message));
     } else {
         my @cmd = (
             $SCANNER,
@@ -71,11 +72,9 @@ if ($q{refresh} && (($ENV{REQUEST_METHOD} || 'GET') ne 'POST' || !valid_nonce($n
         system(@cmd);
         if ($? == 0) {
             my $fresh = read_json($account_cache) || {};
-            $notice = $fresh->{scan_complete}
-                ? 'Scan refreshed for this account.'
-                : 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.';
+            redirect_to_get($fresh->{scan_complete} ? 'refreshed' : 'partial');
         } else {
-            $notice = 'Scan is already running or returned a non-zero status; existing cache is shown.';
+            redirect_to_get('busy');
         }
     }
 }
@@ -83,6 +82,8 @@ if ($q{refresh} && (($ENV{REQUEST_METHOD} || 'GET') ne 'POST' || !valid_nonce($n
 my $data = read_json($account_cache);
 $data = undef if $data && (($data->{user} || '') ne $user);
 
+print "Cache-Control: no-store, max-age=0\r\n";
+print "Pragma: no-cache\r\n";
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
 print $cpanel->header($config->{display_name} || $APP);
 print qq{<link rel="stylesheet" href="help4-disk-usage.css">\n};
@@ -92,13 +93,47 @@ end_liveapi();
 
 sub reject_request {
     my ($message) = @_;
-    print "Status: 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+    print "Status: 403 Forbidden\r\nCache-Control: no-store, max-age=0\r\nPragma: no-cache\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
     print $cpanel->header('Disk Usage Audit');
     print qq{<link rel="stylesheet" href="help4-disk-usage.css">\n};
     print '<div class="h4du-page wrap"><div class="notice">' . h($message) . '</div></div>';
     print $cpanel->footer();
     end_liveapi();
     exit 0;
+}
+
+sub redirect_to_get {
+    my ($status) = @_;
+    $status = 'error' unless $status =~ /\A(?:refreshed|partial|busy|throttled|hourly|limiter|rejected|error)\z/;
+    print "Status: 303 See Other\r\n";
+    print "Location: index.live.pl?scan_status=$status\r\n";
+    print "Cache-Control: no-store, max-age=0\r\n";
+    print "Pragma: no-cache\r\n\r\n";
+    end_liveapi();
+    exit 0;
+}
+
+sub notice_for_status {
+    my ($status) = @_;
+    my %messages = (
+        refreshed => 'Scan refreshed for this account.',
+        partial   => 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.',
+        busy      => 'Scan is already running or returned a non-zero status; existing cache is shown.',
+        throttled => 'Refresh throttled by the account policy. Try again later.',
+        hourly    => 'The hourly refresh limit has been reached. Try again later.',
+        limiter   => 'The refresh limiter could not be updated. Try again later.',
+        rejected  => 'Request rejected. Reload this page and try again.',
+        error     => 'The refresh request could not be completed. Existing cache is shown.',
+    );
+    return $messages{$status} || '';
+}
+
+sub status_for_refresh_message {
+    my ($message) = @_;
+    return 'throttled' if $message =~ /\ARefresh throttled\./;
+    return 'hourly' if $message =~ /\AHourly refresh limit reached\./;
+    return 'limiter' if $message =~ /\AUnable to (?:lock|update) the refresh limiter\./;
+    return 'error';
 }
 
 sub end_liveapi {
@@ -119,7 +154,7 @@ sub page {
         <p class="muted">Account view for @{[h($user || 'unknown')]}. Paths are shown relative to your home directory.</p>
       </div>
       <div class="actions">
-        <form method="post" class="inline-form">
+        <form method="post" action="index.live.pl" class="inline-form" autocomplete="off">
           <input type="hidden" name="refresh" value="1">
           <input type="hidden" name="action_nonce" value="@{[h($nonce)]}">
           <button class="button" type="submit">Refresh scan</button>
@@ -302,7 +337,10 @@ sub allow_refresh {
     }
 
     push @attempts, $now;
-    write_json($rate_path, { last_attempt => $now, attempts => \@attempts });
+    if (!write_json($rate_path, { last_attempt => $now, attempts => \@attempts })) {
+        close $lock_fh;
+        return (0, 'Unable to update the refresh limiter.');
+    }
     close $lock_fh;
     return (1, '');
 }

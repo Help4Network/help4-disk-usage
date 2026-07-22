@@ -143,8 +143,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.6.tar.gz
-cd help4-disk-usage-0.3.6
+tar -xzf help4-disk-usage-0.3.7.tar.gz
+cd help4-disk-usage-0.3.7
 sudo ./install.sh
 ```
 
