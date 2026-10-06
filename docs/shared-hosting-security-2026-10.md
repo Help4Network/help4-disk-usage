@@ -51,3 +51,17 @@ Filesystem tests use temporary synthetic trees and subprocess-only scheduling ho
 - No comparative benchmark supports a claim of being the fastest or best product in the market.
 
 Keep operational evidence and real screenshots private. Public tutorial screenshots must use dummy accounts and domains.
+
+## Deployed Validation On 2026-10-06
+
+Version 0.3.9 retains the five 0.3.8 remediations and adds completed-install version checks after a stopped installer exposed a recovery gap. A synthetic updater test proves same-release repair without `--force` and rejects inconsistent post-install readback. The original failed production install log was not retained; the cause of that first stop is not attributed. Verified reapplication and subsequent complete installation checks passed.
+
+- All three existing rollout nodes passed immutable-archive checks, v0.3.9 runtime/completed-install readback, tenant lock-write denial, global-cache read denial, Linux race/resource-cap tests, and private log-rotation checks.
+- cPanel remained at 11.138.0.12 and boot IDs did not change; no automatic filesystem snapshots were created.
+- Authenticated Genie browser checks passed for the native WHM root shell and Jupiter account view. One refresh POST returned a partial report; two reloads submitted no new scans and preserved its timestamp. Desktop and 390-pixel mobile checks found no relevant console errors or page-level overflow. The native cPanel 138 controls use shadow DOM, which the test explicitly inspects.
+- Live reseller render/ownership filtering passed on the node with reseller ownership present. No reseller ownership was present on the other two nodes, so those are not claimed as positive reseller-browser tests.
+- The WHMCS addon upgraded to 0.3.9. Five admin views and its health widget rendered in the deployed PHP runtime; current entitlement checks exercised the real database for seven clients and nine visible reports, with zero anonymous rows.
+- Host-pinned Check/Sync succeeded for all three allowed server records. Sync used two-account, 15-second smoke batches; saved health rows correctly report partial coverage and no errors, not complete fleet health.
+- Local validation and the GitHub main/tag workflows passed. Public tutorial material contains eight synthetic screenshots; it is not raw production evidence.
+
+These are dated scoped observations, not a promise that every account or external WHMCS role/CSRF configuration has been exhaustively tested.

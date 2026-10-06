@@ -83,7 +83,7 @@ async function cpanelFixture(page, partial = false) {
         { category: 'backups', bytes: 32 * 1024 ** 3, files: 5, hint: 'Move needed copies off-account.' },
         { category: 'cache', bytes: 12 * 1024 ** 3, files: 120000, hint: 'Confirm the application can regenerate these files.' },
       ],
-      large_files: [{ relative_path: 'backups/site-backup.tar.gz', bytes: 28 * 1024 ** 3, mtime: 1791224400 }],
+      large_files: [{ relative_path: 'backups/site-backup.tar.gz', bytes: 28 * 1024 ** 3, mtime: '2026-10-05T18:20:00Z' }],
       stale_large_files: [],
       inode_hotspots: [{ relative_path: 'public_html/wp-content/cache/pages', files: 120000, bytes: 12 * 1024 ** 3 }],
       size_hotspots: [{ relative_path: 'backups', files: 5, bytes: 32 * 1024 ** 3 }],
