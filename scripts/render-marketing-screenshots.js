@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
@@ -15,6 +17,7 @@ function cpanelShell(title, body) {
     *{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#151923;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     .cp-header{height:58px;background:#20252b;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px}.cp-brand{font-size:21px;font-weight:700}.cp-account{color:#dfe4ea;font-size:13px}
     .cp-layout{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:942px}.cp-nav{background:#fff;border-right:1px solid #dfe4ea;padding:22px 16px}.cp-nav-title{margin:0 8px 8px;color:#596577;font-size:12px;font-weight:700;text-transform:uppercase}.cp-nav-title.secondary{margin-top:20px}.cp-link{display:flex;align-items:center;gap:8px;min-height:39px;padding:9px 11px;color:#2c3543;text-decoration:none}.cp-link img{width:20px;height:20px;flex:0 0 20px}.cp-link.selected{background:#eaf2ff;border-left:3px solid #256fda;padding-left:8px;color:#174f9d;font-weight:700}.cp-content{min-width:0;padding:26px 24px;background:#f8f9fb}.cp-page-title{max-width:1240px;margin:0 auto 8px;padding:0 16px;font-size:26px;line-height:1.2}
+    @media(max-width:700px){.cp-layout{display:block}.cp-nav{display:none}.cp-content{padding:18px 4px}.cp-header{padding:0 16px}.cp-page-title{font-size:24px}}
     ${css}
   </style></head><body><header class="cp-header"><div class="cp-brand">cPanel</div><div class="cp-account">customer01</div></header><div class="cp-layout"><aside class="cp-nav"><div class="cp-nav-title">Files</div><a class="cp-link">File Manager</a><a class="cp-link">Disk Usage</a><a class="cp-link selected"><img src="${h4Icon}" alt="">Help4 Disk Usage</a><div class="cp-nav-title secondary">Email</div><a class="cp-link">Email Accounts</a><div class="cp-nav-title secondary">Databases</div><a class="cp-link">Database Manager</a></aside><main class="cp-content"><h1 class="cp-page-title">${title}</h1><div class="h4du-page wrap">${body}</div></main></div></body></html>`;
 }
@@ -53,42 +56,51 @@ const whmRoot = whmShell('WHM Disk Usage Audit', `
   </tbody></table></section>
   <p class="credit">Help4 Disk Usage by Help4 Network</p>`);
 
-const cpanel = cpanelShell('Help4 Disk Usage', `
-  <header class="topbar"><div><p class="muted">Account view for customer01. Paths are shown relative to your home directory.</p></div><div class="actions"><a class="button">Refresh scan</a></div></header>
-  <div class="notice">Scan refreshed for this account.</div>
-  <section class="metrics">
-    ${metric('Status', 'check')}
-    ${metric('Indexed file bytes', '91.7 GB')}
-    ${metric('Indexed inodes', '1,203,918')}
-    ${metric('Last scanned', '2026-06-24T19:54:00Z')}
-  </section>
-  <section><h2>Remediation Hints</h2><ul class="hints">
-    <li>Mailbox growth should be handled through mail retention, archive, or client cleanup.</li>
-    <li>Backup archives and SQL dumps are frequent quota offenders; move needed copies off-account.</li>
-    <li>Cache directories are cleanup candidates after confirming the application can regenerate them.</li>
-    <li>Dependency trees can explode inode counts; remove unused builds and deployment leftovers.</li>
-  </ul></section>
-  <section><h2>Cleanup Hotspots</h2><table><thead><tr><th>Category</th><th>Bytes</th><th>Files</th><th>Hint</th></tr></thead><tbody>
-    <tr><td>mail</td><td>63.5 GB</td><td>789,404</td><td>Mailbox growth should be handled through mail retention, archive, or client cleanup.</td></tr>
-    <tr><td>backups</td><td>19.8 GB</td><td>824</td><td>Backup archives and SQL dumps are frequent quota offenders; move needed copies off-account.</td></tr>
-    <tr><td>cache</td><td>6.4 GB</td><td>96,118</td><td>Cache directories are cleanup candidates after confirming the application can regenerate them.</td></tr>
-    <tr><td>uploads</td><td>1.7 GB</td><td>14,221</td><td>Uploads need content review before deletion; start with duplicates and generated thumbnails.</td></tr>
-  </tbody></table></section>
-  <section><h2>Large files</h2><table><thead><tr><th>Relative path</th><th>Bytes</th><th>Mtime</th></tr></thead><tbody>
-    <tr><td>backups/site-full-backup.tar.gz</td><td>42.8 GB</td><td>2026-06-21T21:59:19Z</td></tr>
-    <tr><td>backups/database-export.sql.gz</td><td>8.1 GB</td><td>2026-06-20T10:44:18Z</td></tr>
-    <tr><td>mail/archive/client-mailbox.mbox</td><td>4.7 GB</td><td>2026-05-18T03:12:41Z</td></tr>
-    <tr><td>public_html/wp-content/uploads/video-library.zip</td><td>2.4 GB</td><td>2026-03-04T16:22:01Z</td></tr>
-    <tr><td>tmp/cache-export-previous-release.tar</td><td>1.9 GB</td><td>2025-12-14T08:40:11Z</td></tr>
-  </tbody></table></section>
-  <section><h2>Inode-heavy directories</h2><table><thead><tr><th>Relative path</th><th>Files</th><th>Bytes</th></tr></thead><tbody>
-    <tr><td>mail/cur</td><td>392,114</td><td>31.7 GB</td></tr>
-    <tr><td>mail/.spam/new</td><td>211,802</td><td>9.4 GB</td></tr>
-    <tr><td>public_html/cache/pages</td><td>94,442</td><td>5.8 GB</td></tr>
-    <tr><td>public_html/wp-content/cache</td><td>73,118</td><td>612.5 MB</td></tr>
-    <tr><td>node_modules</td><td>58,339</td><td>1.2 GB</td></tr>
-  </tbody></table></section>
-  <p class="credit">Help4 Disk Usage by Help4 Network</p>`);
+
+async function cpanelFixture(page, partial = false) {
+  const localUser = os.userInfo().username;
+  if (['root', 'cpanel', 'nobody'].includes(localUser)) {
+    throw new Error('Render cPanel fixtures as an ordinary local development user.');
+  }
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'h4du-screenshot-'));
+  fs.chmodSync(fixture, 0o700);
+  try {
+    fs.mkdirSync(path.join(fixture, 'accounts'));
+    fs.writeFileSync(path.join(fixture, 'config.json'), JSON.stringify({ display_name: 'Disk Usage Audit' }));
+    fs.writeFileSync(path.join(fixture, 'accounts', `${localUser}.json`), JSON.stringify({
+      user: localUser,
+      scan_complete: !partial,
+      severity: partial ? 'incomplete' : 'check',
+      limit_reason: partial ? 'ENTRY_LIMIT' : '',
+      errors: 0,
+      disk_bytes: 48 * 1024 ** 3,
+      inode_count: partial ? 500000 : 184220,
+      scanned_at: '2026-10-06T18:20:00Z',
+      remediation_hints: partial
+        ? ['Scan coverage is incomplete. Treat totals as lower bounds and ask your host to review coverage.']
+        : ['Move retained backup archives off-account after confirming recovery requirements.', 'Review application cache retention before removing generated files.'],
+      category_hotspots: [
+        { category: 'backups', bytes: 32 * 1024 ** 3, files: 5, hint: 'Move needed copies off-account.' },
+        { category: 'cache', bytes: 12 * 1024 ** 3, files: 120000, hint: 'Confirm the application can regenerate these files.' },
+      ],
+      large_files: [{ relative_path: 'backups/site-backup.tar.gz', bytes: 28 * 1024 ** 3, mtime: 1791224400 }],
+      stale_large_files: [],
+      inode_hotspots: [{ relative_path: 'public_html/wp-content/cache/pages', files: 120000, bytes: 12 * 1024 ** 3 }],
+      size_hotspots: [{ relative_path: 'backups', files: 5, bytes: 32 * 1024 ** 3 }],
+    }));
+    const response = execFileSync('perl', [path.join(root, 'src/cpanel/index.live.pl')], {
+      encoding: 'utf8',
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C', PERL5LIB: path.join(root, 'tests/lib'),
+        HELP4_DU_CONFIG: path.join(fixture, 'config.json'), HELP4_DU_ACCOUNT_CACHE_DIR: fixture,
+        REMOTE_USER: localUser, QUERY_STRING: '', REQUEST_METHOD: 'GET' },
+    });
+    await page.setContent(response.slice(response.indexOf('\r\n\r\n') + 4));
+    const content = (await page.locator('.h4du-page').innerHTML()).replaceAll(localUser, 'customer01');
+    return cpanelShell('Disk Usage Audit', content);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+}
 
 function whmcsShell(title, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
@@ -145,6 +157,7 @@ body{margin:0;background:#f6f7f9;color:#151923;font:14px/1.45 -apple-system,Blin
 async function shot(page, html, file, viewport = { width: 1440, height: 950 }) {
   await page.setViewportSize(viewport);
   await page.setContent(html, { waitUntil: 'load' });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.screenshot({ path: path.join(outDir, file), fullPage: true });
 }
 
@@ -156,7 +169,12 @@ async function shot(page, html, file, viewport = { width: 1440, height: 950 }) {
   });
   const page = await browser.newPage();
   await shot(page, whmRoot, 'whm-root-dashboard.png');
+  const cpanel = await cpanelFixture(page);
   await shot(page, cpanel, 'cpanel-account-dashboard.png', { width: 1280, height: 1000 });
+  await shot(page, cpanel, 'cpanel-account-mobile.png', { width: 390, height: 844 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  if (overflow) throw new Error('cPanel mobile fixture has page-level horizontal overflow.');
+  await shot(page, await cpanelFixture(page, true), 'cpanel-incomplete-coverage.png', { width: 1280, height: 1000 });
   await shot(page, whmcsAdmin, 'whmcs-admin-deploy-reporting.png');
   await shot(page, whmcsHomeWidget, 'whmcs-admin-home-health-widget.png');
   await shot(page, whmcsHealth, 'whmcs-server-health.png');

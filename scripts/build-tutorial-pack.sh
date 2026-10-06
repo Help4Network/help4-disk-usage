@@ -28,6 +28,8 @@ cp "$ROOT_DIR/docs/marketing/tutorial-pack-readme.md" "$PACK_DIR/README.md"
 cp "$ROOT_DIR/README.md" "$PACK_DIR/docs/project-readme.md"
 cp "$ROOT_DIR/docs/whmcs-integration.md" "$PACK_DIR/docs/whmcs-integration.md"
 cp "$ROOT_DIR/docs/security-review.md" "$PACK_DIR/docs/security-notes.md"
+cp "$ROOT_DIR/docs/shared-hosting-security-2026-10.md" "$PACK_DIR/docs/shared-hosting-security-2026-10.md"
+cp "$ROOT_DIR/SECURITY.md" "$PACK_DIR/SECURITY.md"
 cp "$ROOT_DIR/docs/usage-guide.md" "$PACK_DIR/docs/usage-guide.md"
 cp "$ROOT_DIR/docs/rollout.md" "$PACK_DIR/docs/rollout.md"
 cp "$ROOT_DIR/docs/marketing/marketing-brief.md" "$PACK_DIR/docs/marketing-brief.md"
@@ -37,8 +39,9 @@ cp "$ROOT_DIR/LICENSE" "$PACK_DIR/LICENSE"
 # Public tutorial material uses generic node labels even where engineering docs name rollout targets.
 LC_ALL=C LANG=C find "$PACK_DIR" -type f -name '*.md' -exec perl -pi -e '
   s/Genie/Validation Node A/g;
-  s/gohoster/Future Node B/g;
-  s/dolce01/Future Node C/g;
+  s/gohoster02/Validation Node B/g;
+  s/gohoster/Validation Node B/g;
+  s/dolce01/Validation Node C/g;
 ' {} +
 
 if rg -i -n 'randomhostingservices|\bgenie\b|\bgohoster\b|\bdolce01\b' "$PACK_DIR"; then

@@ -47,7 +47,7 @@ if ($has_action && !$valid_action) {
 } elsif ($q{update_apply} && $is_root) {
     $update_status = run_update('apply', $config);
     if ($update_status->{ok} && ($update_status->{status} || '') eq 'updated') {
-        $notice = 'Update applied to version ' . ($update_status->{installed_version} || 'unknown') . '. Backup: ' . ($update_status->{backup} || 'see install output');
+        $notice = 'Update applied to version ' . ($update_status->{installed_version} || 'unknown') . '.';
     } elsif ($update_status->{ok}) {
         $notice = 'Update check completed: ' . ($update_status->{status} || 'unknown') . '.';
     } else {
@@ -181,7 +181,7 @@ sub settings_panel {
         <label>Footer prefix<input name="credit_prefix" value="@{[h($cfg->{credit_prefix})]}"></label>
         <label class="wide">Release tarball URL<input name="release_url" value="@{[h($cfg->{release_url})]}"></label>
         <label class="wide">Update manifest URL<input name="update_manifest_url" value="@{[h($cfg->{update_manifest_url})]}"></label>
-        <label class="wide">Shared scan lock directory<input name="scan_lock_dir" value="@{[h($cfg->{scan_lock_dir})]}"></label>
+        <label class="wide">Shared scan lock directory<input value="@{[h($cfg->{scan_lock_dir})]}" readonly></label>
         <label class="wide">Package overrides JSON<textarea name="package_overrides_json" rows="8">@{[h($overrides)]}</textarea></label>
         <div class="wide"><button class="button" type="submit">Save limits</button></div>
       </form>
@@ -288,7 +288,7 @@ sub default_config {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => 'Disk Usage Audit',
         credit_prefix                 => 'Built by',
-        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz',
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz',
         update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
@@ -306,11 +306,10 @@ sub load_config {
             $cfg->{$key} = $disk->{$key} if exists $disk->{$key};
         }
     }
-    $cfg->{scan_lock_dir} = clean_lock_dir($cfg->{scan_lock_dir})
-        || File::Spec->catdir($CACHE_DIR, 'locks');
+    $cfg->{scan_lock_dir} = File::Spec->catdir($CACHE_DIR, 'locks');
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
-    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz';
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz';
     $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
@@ -323,7 +322,7 @@ sub load_config {
 sub save_settings {
     my ($q, $current) = @_;
     my $cfg = {
-        scan_lock_dir                 => clean_lock_dir($q->{scan_lock_dir}) || $current->{scan_lock_dir},
+        scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => clean_label($q->{display_name}, $current->{display_name}),
         credit_prefix                 => clean_label($q->{credit_prefix}, $current->{credit_prefix}),
         release_url                   => clean_url($q->{release_url}) || $current->{release_url},
@@ -344,7 +343,7 @@ sub save_settings {
     my $lock = File::Spec->catfile($cfg->{scan_lock_dir}, 'scan.lock');
     open my $lfh, '>>', $lock;
     close $lfh if $lfh;
-    chmod 0666, $lock if -e $lock;
+    chmod 0644, $lock if -e $lock;
     write_json_file($CONFIG_FILE, $cfg) or return 'Settings not saved: unable to write config file.';
     chmod 0644, $CONFIG_FILE;
     return 'Settings saved.';
@@ -393,16 +392,6 @@ sub clean_abs_path {
     return '' unless defined $path && $path =~ m{\A/[A-Za-z0-9_./-]+\z};
     $path =~ s{/+}{/}g;
     return $path;
-}
-
-sub clean_lock_dir {
-    my ($path) = @_;
-    $path = clean_abs_path($path);
-    my $base = clean_abs_path($CACHE_DIR);
-    return '' unless $path && $base;
-    my $allowed = File::Spec->catdir($base, 'locks');
-    return $path if $path eq $allowed || index($path, "$allowed/") == 0;
-    return '';
 }
 
 sub clean_url {
@@ -571,6 +560,7 @@ sub fmt_bytes {
 
 sub fmt_int {
     my ($n) = @_;
+    $n = 0 unless defined($n) && !ref($n) && $n =~ /\A-?\d+\z/;
     1 while defined($n) && $n =~ s/^(-?\d+)(\d{3})/$1,$2/;
     return $n || 0;
 }

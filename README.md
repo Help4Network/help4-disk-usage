@@ -26,7 +26,7 @@ Help4 Disk Usage is designed around background scans, bounded runtime, visible t
 
 ```text
 src/bin/help4-disk-usage-scan                         Scanner and JSON cache writer
-src/bin/help4-disk-usage-update                       Backup-first release checker/updater
+src/bin/help4-disk-usage-update                       Checksum-verified release checker/updater
 src/whm/index.cgi                                     WHM root/reseller dashboard
 src/whm/templates/index.tmpl                          Native WHM master-template wrapper
 src/cpanel/index.live.pl                              cPanel account page
@@ -51,13 +51,13 @@ CHANGELOG.md                                          Release history
 - Actionable offender summaries:
   - largest files
   - stale large files
-  - inode-heavy directories
-  - size-heavy directories
+  - directories with many directly contained regular files
+  - directories with large directly contained regular files
   - cache, log, temp, backup, mail, dependency, and upload hotspots
-  - growth deltas when previous cache exists
+  - growth deltas between two complete scans
 - Visible `scanned_at` timestamps and scan completeness.
 - Root-editable scan limits for WHM and cPanel refreshes.
-- Shared foreground scan lock so GUI refreshes do not stack.
+- Shared cache-writing scan lock held through traversal and cache publication.
 - Whole-run scan budgets with oldest-cache-first rotation for large fleets.
 - POST-only scan, settings, and update actions protected by short-lived nonces.
 - Root update panel for checking/applying configured repository or release tarball updates.
@@ -86,7 +86,7 @@ CHANGELOG.md                                          Release history
 - Verified remote exit status, bounded execution time, and bounded output.
 - Health states for missing, stale, erroring, disabled, attention-needed, and healthy servers.
 - Manual deployment command when one-click SSH deploy is unavailable.
-- Per-account scan data mapped to `tblhosting` by server ID and cPanel username.
+- Per-account scan data mapped to exactly one current Active/Suspended `tblhosting` service by server ID and cPanel username; ambiguous or historical mappings are hidden from clients.
 - Customer-area report at `index.php?m=help4_disk_usage`.
 - Client navbar link when enabled.
 - Event log for deploy/check/sync results.
@@ -143,8 +143,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.7.tar.gz
-cd help4-disk-usage-0.3.7
+tar -xzf help4-disk-usage-0.3.8.tar.gz
+cd help4-disk-usage-0.3.8
 sudo ./install.sh
 ```
 
@@ -392,7 +392,7 @@ Root can edit these in WHM under **Help4 Disk Usage > Scan Limits**. The display
 
 Controls:
 
-- `scan_lock_dir`: shared lock directory below `/var/cpanel/help4-disk-usage`. The installer creates a root-owned directory and a writable advisory `scan.lock` file. WHM, cPanel, cron, and WHMCS-triggered scans use the same lock so only one cache-writing scan runs at a time.
+- `scan_lock_dir`: fixed at `/var/cpanel/help4-disk-usage/locks` for installed integrations. The root-owned `scan.lock` is mode `0644`: account users open it read-only to acquire an advisory lock, not to write storage outside their quota. WHM, cPanel, cron, and WHMCS use this same inode, held through cache publication. The WHM field is read-only; upgrades normalize older custom paths. Keep this lock on a local filesystem with Linux `flock` support.
 - `whm_scan_max_seconds`: whole-run runtime cap for WHM-triggered scans.
 - `cpanel_refreshes_per_hour`: account-level hourly refresh cap for cPanel users.
 - `cpanel_min_interval_seconds`: minimum time between cPanel user refreshes.
@@ -416,7 +416,22 @@ Package override example:
 }
 ```
 
-cPanel user throttle state is stored under the account's own `.cpanel/help4-disk-usage/rate.json`. It does not grant cross-account visibility.
+cPanel user throttle state is stored under the account's own `.cpanel/help4-disk-usage/rate.json`. It does not grant cross-account visibility. This is a cooperative UI control: an account with shell/code execution can alter its own state or run its own traversal. Use CloudLinux LVE, cgroups, process/I/O limits, or an equivalent hosting policy for hard resource isolation. The plugin is not an OS quota enforcement service.
+
+Every account traversal also has memory/work safety limits, independent of refresh policy:
+
+| Limit | Default | CLI / environment |
+| --- | ---: | --- |
+| Entries observed, including the home inode | 500,000 | `--max-entries` / `HELP4_DU_MAX_ENTRIES` |
+| Child directories entered | 25,000 | `--max-dirs` / `HELP4_DU_MAX_DIRS` |
+| Directory depth | 64 | `--max-depth` / `HELP4_DU_MAX_DEPTH` |
+| Retained directory-key bytes | 8 MiB | `--max-path-bytes` / `HELP4_DU_MAX_PATH_BYTES` |
+| Individual relative path | 4,096 bytes | fixed |
+| Retained offender rows | 25 | `--top` / `HELP4_DU_TOP` |
+
+These advanced scanner limits are not package overrides in the WHM UI. The scanner streams directory entries and keeps bounded top-N file candidates. On a timeout, safety limit, unreadable directory, or detected replacement race, it publishes `scan_complete=false`, `errors`, and a `limit_reason` when applicable. Disk/inode totals are lower bounds, not quota totals. Growth is suppressed unless both snapshots are complete. Directory rankings count **direct regular-file children**, not recursive subtree totals; inode totals count observed entries, not deduplicated hard links. Disk totals use logical file sizes, not allocated blocks, filesystem quotas, database storage outside the home, or a consistent snapshot of an actively changing filesystem.
+
+The runtime alarm bounds traversal; sorting a bounded directory set and cache serialization follow afterward. Blocking kernel I/O is not an absolute wall-clock guarantee. Cron runs at reduced CPU/I/O priority, suppresses JSON on stdout, and rotates its root-only diagnostic log weekly or at the next logrotate run after exceeding 1 MiB, retaining four rotations.
 
 When a whole-server scan reaches its budget, the scanner writes the completed account caches, reports `accounts_remaining`, and rotates the oldest or missing cache to the front on the next run. This prevents the first accounts alphabetically from monopolizing every bounded scan.
 
@@ -426,7 +441,7 @@ When a whole-server scan reaches its budget, the scanner writes the completed ac
 - WHM resellers see only owned accounts.
 - cPanel users see only their own account.
 - cPanel customer output renders relative paths only.
-- Scanner does not follow symlinks.
+- Scanner opens child directories relative to held directory descriptors with `O_NOFOLLOW`, checks inode/device identity, and never reads file contents.
 - Scanner prunes `virtfs`, `.cagefs`, and `.trash`.
 - Scanner does not cross filesystem device boundaries from account home.
 - GUI-triggered scans use a shared non-blocking lock.
@@ -439,8 +454,10 @@ When a whole-server scan reaches its budget, the scanner writes the completed ac
 - WHMCS remote commands require a verified exit marker, have a bounded execution timeout, and cap captured output at 16 MiB.
 - Update apply and bootstrap deployment require HTTPS plus a manifest SHA-256 match before extraction.
 - WHMCS strips absolute scanner paths before storing support summary lists.
-- WHMCS client reports re-check the current WHMCS service mapping for the logged-in client before rendering each row.
+- WHMCS client reports re-check a unique Active/Suspended service, service ID, server, username, logged-in client, and scan date versus service registration before rendering each row.
 - JSON cache files should not be made web-accessible.
+
+See [SECURITY.md](SECURITY.md) for disclosure guidance and [the October shared-hosting review](docs/shared-hosting-security-2026-10.md) for scope, regression coverage, and residual risks. No security audit establishes perfect isolation or a market-leading performance claim.
 
 ## Performance Model
 

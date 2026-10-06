@@ -1,16 +1,15 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use File::Find qw(find);
 use File::Path qw(make_path);
 use File::Spec;
 use Cwd qw(abs_path);
-use Fcntl qw(:flock);
+use Fcntl qw(:flock :DEFAULT :mode O_NOFOLLOW O_DIRECTORY);
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use Sys::Hostname qw(hostname);
 
-our $VERSION = '0.3.7';
+our $VERSION = '0.3.8';
 
 my %opt = (
     scope          => 'all',
@@ -25,6 +24,10 @@ my %opt = (
     top            => $ENV{HELP4_DU_TOP} || 25,
     large_mb       => $ENV{HELP4_DU_LARGE_MB} || 100,
     stale_days     => $ENV{HELP4_DU_STALE_DAYS} || 180,
+    max_entries    => $ENV{HELP4_DU_MAX_ENTRIES} || 500_000,
+    max_dirs       => $ENV{HELP4_DU_MAX_DIRS} || 25_000,
+    max_depth      => $ENV{HELP4_DU_MAX_DEPTH} || 64,
+    max_path_bytes => $ENV{HELP4_DU_MAX_PATH_BYTES} || 8 * 1024 * 1024,
     good_gb        => $ENV{HELP4_DU_GOOD_GB} || 25,
     bad_gb         => $ENV{HELP4_DU_BAD_GB} || 75,
     good_inodes    => $ENV{HELP4_DU_GOOD_INODES} || 100_000,
@@ -47,6 +50,10 @@ while (@ARGV) {
     elsif ($arg eq '--top') { $opt{top} = shift @ARGV // die "--top needs a value\n"; }
     elsif ($arg eq '--large-mb') { $opt{large_mb} = shift @ARGV // die "--large-mb needs a value\n"; }
     elsif ($arg eq '--stale-days') { $opt{stale_days} = shift @ARGV // die "--stale-days needs a value\n"; }
+    elsif ($arg eq '--max-entries') { $opt{max_entries} = shift @ARGV // die "--max-entries needs a value\n"; }
+    elsif ($arg eq '--max-dirs') { $opt{max_dirs} = shift @ARGV // die "--max-dirs needs a value\n"; }
+    elsif ($arg eq '--max-depth') { $opt{max_depth} = shift @ARGV // die "--max-depth needs a value\n"; }
+    elsif ($arg eq '--max-path-bytes') { $opt{max_path_bytes} = shift @ARGV // die "--max-path-bytes needs a value\n"; }
     elsif ($arg eq '--write-cache') { $opt{write_cache} = 1; }
     elsif ($arg eq '--no-cache') { $opt{write_cache} = 0; }
     elsif ($arg eq '--quiet') { $opt{json} = 0; }
@@ -63,7 +70,12 @@ $opt{account_limit} = bounded_int($opt{account_limit}, 0, 100_000, 0);
 $opt{top} = bounded_int($opt{top}, 1, 100, 25);
 $opt{large_mb} = bounded_int($opt{large_mb}, 1, 1_000_000, 100);
 $opt{stale_days} = bounded_int($opt{stale_days}, 1, 36500, 180);
-$opt{lock_dir} ||= $opt{cache_dir};
+$opt{max_entries} = bounded_int($opt{max_entries}, 1, 5_000_000, 500_000);
+$opt{max_dirs} = bounded_int($opt{max_dirs}, 1, 100_000, 25_000);
+$opt{max_depth} = bounded_int($opt{max_depth}, 1, 128, 64);
+$opt{max_path_bytes} = bounded_int($opt{max_path_bytes}, 1024, 32 * 1024 * 1024, 8 * 1024 * 1024);
+$opt{lock_dir} ||= $opt{cache_dir} eq '/var/cpanel/help4-disk-usage'
+    ? '/var/cpanel/help4-disk-usage/locks' : $opt{cache_dir};
 die "--lock-dir must be an absolute path when provided\n" if $opt{lock_dir} ne '' && $opt{lock_dir} !~ m{\A/};
 enforce_unprivileged_scope();
 
@@ -73,10 +85,12 @@ my $lock_file = File::Spec->catfile($opt{lock_dir}, 'scan.lock');
 make_path($cache_accounts_dir, { mode => 0750 }) if $opt{write_cache};
 make_path($opt{lock_dir}, { mode => 0755 }) if $opt{write_cache} && !-d $opt{lock_dir};
 
+my $scan_lock_fh;
 if ($opt{write_cache}) {
-    open my $lock_fh, '>>', $lock_file or die "Cannot open lock file $lock_file: $!\n";
-    chmod 0666, $lock_file;
-    flock($lock_fh, LOCK_EX | LOCK_NB) or die "Another Help4 Disk Usage scan is already running\n";
+    sysopen($scan_lock_fh, $lock_file, O_RDONLY | O_CREAT | O_NOFOLLOW, 0644)
+        or die "Cannot open lock file $lock_file: $!\n";
+    chmod 0644, $scan_lock_fh if $> == 0;
+    flock($scan_lock_fh, LOCK_EX | LOCK_NB) or die "Another Help4 Disk Usage scan is already running\n";
 }
 
 my @discovered_accounts = discover_accounts();
@@ -125,6 +139,10 @@ my $report = {
         large_mb    => int($opt{large_mb}),
         stale_days  => int($opt{stale_days}),
         max_seconds => int($opt{max_seconds}),
+        max_entries => int($opt{max_entries}),
+        max_dirs    => int($opt{max_dirs}),
+        max_depth   => int($opt{max_depth}),
+        max_path_bytes => int($opt{max_path_bytes}),
     },
     accounts            => \@results,
 };
@@ -152,6 +170,10 @@ Environment:
   HELP4_DU_LOCK_DIR=/var/cpanel/help4-disk-usage/locks
   HELP4_DU_FIXTURE_ROOT=/tmp/fixture
   HELP4_DU_MAX_SECONDS=90  # whole-run budget, not a per-account budget
+  HELP4_DU_MAX_ENTRIES=500000
+  HELP4_DU_MAX_DIRS=25000
+  HELP4_DU_MAX_DEPTH=64
+  HELP4_DU_MAX_PATH_BYTES=8388608
 USAGE
 }
 
@@ -249,47 +271,74 @@ sub scan_account {
     my ($acct, $opt_ref) = @_;
     my $started = time;
     my $home = $acct->{home};
-    my $home_dev = (lstat($home))[0];
     my $deadline = $started + int($opt_ref->{max_seconds});
     my $large_bytes = int($opt_ref->{large_mb}) * 1024 * 1024;
     my $stale_before = time - int($opt_ref->{stale_days}) * 86400;
     my (%dir_files, %dir_bytes, %hotspots);
     my (@large_files, @stale_large);
     my ($total_bytes, $inodes, $errors, $truncated) = (0, 0, 0, 0);
+    my ($directories, $limit_reason) = (0, '');
+    my $retained_path_bytes = 0;
 
     my $previous = read_previous_account_cache($acct->{user});
 
     eval {
         local $SIG{ALRM} = sub { die "SCAN_TIMEOUT\n"; };
         alarm int($opt_ref->{max_seconds});
-        find({
-            no_chdir => 1,
-            wanted => sub {
-                my $path = $File::Find::name;
+        sysopen(my $original_cwd, '.', O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            or die "Unable to anchor original directory\n";
+        sysopen(my $home_fh, $home, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            or die "Unable to open account home without following links\n";
+        my $home_dev = (stat($home_fh))[0];
+        $inodes = 1;
+        my $walk;
+        $walk = sub {
+            my ($dir_fh, $rel_dir, $depth) = @_;
+            chdir($dir_fh) or die "Unable to enter anchored directory\n";
+            opendir(my $dh, '.') or die "Unable to read anchored directory\n";
+            while (defined(my $name = readdir($dh))) {
+                next if $name eq '.' || $name eq '..';
                 if (time > $deadline) {
-                    $truncated = 1;
                     die "SCAN_TIMEOUT\n";
                 }
-                if (should_prune($path, $home)) {
-                    $File::Find::prune = 1 if -d _;
-                    return;
-                }
-                my @st = lstat($path);
+                die "SCAN_ENTRY_LIMIT\n" if $inodes >= $opt_ref->{max_entries};
+                my $rel = $rel_dir eq '.' ? $name : "$rel_dir/$name";
+                die "SCAN_PATH_LIMIT\n" if length($rel) > 4096;
+                next if should_prune($rel, '');
+                my @st = lstat($name);
                 if (!@st) {
                     $errors++;
-                    return;
+                    next;
                 }
-                if (-d _ && defined $home_dev && $st[0] != $home_dev) {
-                    $File::Find::prune = 1;
-                    return;
-                }
+                next if S_ISDIR($st[2]) && $st[0] != $home_dev;
                 $inodes++;
-                return unless -f _;
+                if (S_ISDIR($st[2])) {
+                    die "SCAN_DEPTH_LIMIT\n" if $depth >= $opt_ref->{max_depth};
+                    die "SCAN_DIRECTORY_LIMIT\n" if ++$directories > $opt_ref->{max_dirs};
+                    # Each open is relative to a held parent, with a no-follow identity check.
+                    if (!sysopen(my $child_fh, $name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)) {
+                        $errors++;
+                        next;
+                    } else {
+                        my @opened = stat($child_fh);
+                        if (!@opened || $opened[0] != $st[0] || $opened[1] != $st[1]) {
+                            $errors++;
+                            next;
+                        }
+                        $walk->($child_fh, $rel, $depth + 1);
+                        chdir($dir_fh) or die "Unable to restore anchored directory\n";
+                    }
+                    next;
+                }
+                next unless S_ISREG($st[2]);
 
                 my ($size, $mtime) = ($st[7] || 0, $st[9] || 0);
                 $total_bytes += $size;
-                my $rel = rel_path($home, $path);
                 my $dir = rel_parent($rel);
+                if (!exists $dir_files{$dir}) {
+                    $retained_path_bytes += length($dir);
+                    die "SCAN_PATH_LIMIT\n" if $retained_path_bytes > $opt_ref->{max_path_bytes};
+                }
                 $dir_files{$dir}++;
                 $dir_bytes{$dir} += $size;
                 for my $tag (classify_path($rel)) {
@@ -297,17 +346,23 @@ sub scan_account {
                     $hotspots{$tag}{bytes} += $size;
                 }
                 if ($size >= $large_bytes) {
-                    push @large_files, item($path, $rel, $size, $mtime);
-                    push @stale_large, item($path, $rel, $size, $mtime) if $mtime && $mtime < $stale_before;
+                    retain_top(\@large_files, item('', $rel, $size, $mtime), $opt_ref->{top});
+                    retain_top(\@stale_large, item('', $rel, $size, $mtime), $opt_ref->{top}) if $mtime && $mtime < $stale_before;
                 }
-            },
-        }, $home);
+            }
+        };
+        my $ok = eval { $walk->($home_fh, '.', 0); 1 };
+        my $failure = $@;
+        undef $walk;
+        chdir($original_cwd) or die "Unable to restore original directory\n";
+        die $failure unless $ok;
     };
     alarm 0;
     if ($@) {
-        $truncated = 1 if $@ =~ /SCAN_TIMEOUT/;
-        $errors++ unless $@ =~ /SCAN_TIMEOUT/;
+        $limit_reason = $1 if $@ =~ /SCAN_(TIMEOUT|ENTRY_LIMIT|DIRECTORY_LIMIT|DEPTH_LIMIT|PATH_LIMIT)/;
+        $errors++ unless $limit_reason;
     }
+    $truncated = 1 if $limit_reason || $errors;
 
     @large_files = top_items(\@large_files, $opt_ref->{top}, 'bytes');
     @stale_large = top_items(\@stale_large, $opt_ref->{top}, 'bytes');
@@ -322,7 +377,7 @@ sub scan_account {
         }
     } sort { ($hotspots{$b}{bytes} || 0) <=> ($hotspots{$a}{bytes} || 0) } keys %hotspots;
 
-    my $growth = growth_summary($previous, $total_bytes, $inodes);
+    my $growth = growth_summary($previous, $total_bytes, $inodes, !$truncated);
     my $severity = severity($total_bytes, $inodes, $truncated, \@large_files, \@hotspot_rows);
 
     return {
@@ -334,6 +389,7 @@ sub scan_account {
         duration_seconds    => time - $started,
         scan_complete       => $truncated ? JSON::PP::false : JSON::PP::true,
         errors              => int($errors),
+        limit_reason        => $limit_reason,
         severity            => $severity,
         disk_bytes          => int($total_bytes),
         inode_count         => int($inodes),
@@ -427,6 +483,12 @@ sub top_items {
     return @sorted;
 }
 
+sub retain_top {
+    my ($rows, $item, $limit) = @_;
+    push @$rows, $item;
+    @$rows = top_items($rows, $limit, 'bytes') if @$rows > 2 * $limit;
+}
+
 sub top_dirs {
     my ($files, $bytes, $limit, $key) = @_;
     my @rows = map {
@@ -456,11 +518,14 @@ sub read_previous_account_cache {
     open my $fh, '<', $path or return {};
     local $/;
     my $json = <$fh>;
-    return eval { decode_json($json) } || {};
+    my $data = eval { decode_json($json) };
+    return ref($data) eq 'HASH' ? $data : {};
 }
 
 sub growth_summary {
-    my ($previous, $bytes, $inodes) = @_;
+    my ($previous, $bytes, $inodes, $complete) = @_;
+    return { has_previous => JSON::PP::false, unavailable_reason => 'complete_scans_required' }
+        unless $complete && ref($previous) eq 'HASH' && $previous->{scan_complete};
     return { has_previous => JSON::PP::false } unless $previous && ref $previous eq 'HASH' && defined $previous->{disk_bytes};
     my $old_bytes = int($previous->{disk_bytes} || 0);
     my $old_inodes = int($previous->{inode_count} || 0);
@@ -477,7 +542,7 @@ sub growth_summary {
 sub remediation_hints {
     my ($severity, $hotspots, $stale_large, $growth, $truncated) = @_;
     my @hints;
-    push @hints, 'Scan hit the runtime cap; rescan this account alone or raise HELP4_DU_MAX_SECONDS during off-peak hours.' if $truncated;
+    push @hints, 'Scan coverage is incomplete because a safety limit, unreadable entry, or directory change was encountered. Treat totals as lower bounds and ask your host to review coverage.' if $truncated;
     push @hints, 'Review old large files first; they are usually safer to archive or delete than active application files.' if @$stale_large;
     for my $row (@$hotspots) {
         push @hints, $row->{hint} if $row->{hint};

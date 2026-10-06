@@ -117,7 +117,7 @@ sub notice_for_status {
     my ($status) = @_;
     my %messages = (
         refreshed => 'Scan refreshed for this account.',
-        partial   => 'The scan reached its runtime limit. Existing partial results are shown; try again later if more coverage is needed.',
+        partial   => 'Scan coverage is incomplete. Totals are lower bounds; review the coverage notice before cleanup decisions.',
         busy      => 'Scan is already running or returned a non-zero status; existing cache is shown.',
         throttled => 'Refresh throttled by the account policy. Try again later.',
         hourly    => 'The hourly refresh limit has been reached. Try again later.',
@@ -173,7 +173,11 @@ sub summary {
     my $hints = join '', map { '<li>' . h($_) . '</li>' } @{$a->{remediation_hints} || []};
     my $large = table($a->{large_files} || [], ['relative_path', 'bytes', 'mtime'], 'Large files');
     my $stale = table($a->{stale_large_files} || [], ['relative_path', 'bytes', 'mtime'], 'Stale large files');
-    my $inode = table($a->{inode_hotspots} || [], ['relative_path', 'files', 'bytes'], 'Inode-heavy directories');
+    my $inode = table($a->{inode_hotspots} || [], ['relative_path', 'files', 'bytes'], 'Directories with most direct files');
+    my $sizes = table($a->{size_hotspots} || [], ['relative_path', 'bytes', 'files'], 'Largest directories (direct files)');
+    my $coverage = !$a->{scan_complete}
+        ? '<div class="notice">Incomplete scan: totals are lower bounds. Reason: ' . h($a->{limit_reason} || 'unreadable or changed entries') . '. Errors: ' . fmt_int($a->{errors} || 0) . '.</div>'
+        : '';
     my $cats = category_table($a->{category_hotspots} || []);
     return <<"HTML";
 <section class="metrics">
@@ -182,6 +186,7 @@ sub summary {
   <div><strong>@{[fmt_int($a->{inode_count} || 0)]}</strong><span>Indexed inodes</span></div>
   <div><strong>@{[h($a->{scanned_at} || 'never')]}</strong><span>Last scanned</span></div>
 </section>
+$coverage
 <section>
   <h2>Remediation Hints</h2>
   <ul class="hints">$hints</ul>
@@ -190,6 +195,7 @@ $cats
 $large
 $stale
 $inode
+$sizes
 HTML
 }
 
@@ -231,7 +237,8 @@ sub read_json {
     return unless -f $path;
     open my $fh, '<', $path or return;
     local $/;
-    return eval { decode_json(<$fh>) };
+    my $data = eval { decode_json(<$fh>) };
+    return ref($data) eq 'HASH' ? $data : undef;
 }
 
 sub default_config {
@@ -254,7 +261,7 @@ sub load_config {
             $cfg->{$key} = $disk->{$key} if exists $disk->{$key};
         }
     }
-    $cfg->{scan_lock_dir} ||= '/var/cpanel/help4-disk-usage/locks';
+    $cfg->{scan_lock_dir} = '/var/cpanel/help4-disk-usage/locks';
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);
@@ -435,6 +442,7 @@ sub fmt_bytes {
 
 sub fmt_int {
     my ($n) = @_;
+    $n = 0 unless defined($n) && !ref($n) && $n =~ /\A-?\d+\z/;
     1 while defined($n) && $n =~ s/^(-?\d+)(\d{3})/$1,$2/;
     return $n || 0;
 }

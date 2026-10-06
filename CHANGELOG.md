@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.8
+
+- Replaced pathname-based recursive traversal with parent-held directory descriptors, no-follow opens, and inode/device checks to prevent directory replacement from escaping account scope.
+- Changed the root-owned shared lock to mode 0644 and read-only opens, and retained it through scanning and cache publication.
+- Standardized installed entry points on one fixed lock directory, including direct scanner invocations with the default global cache.
+- Added bounded entry, directory, depth, retained-path, and streaming top-N budgets to prevent scan-memory growth proportional to all matching files.
+- Marked safety-limited or erroring scans incomplete, suppressed growth based on partial snapshots, and added direct-file directory size rankings and coverage notices to cPanel.
+- Restricted WHMCS service binding and client rendering to exactly one current Active/Suspended service; rejected reports predating service registration and ambiguous username reuse.
+- Preserved configured update-channel precedence and propagated the manifest URL during installation.
+- Suppressed full cron JSON logs, restricted the diagnostic log to root, and added rotation.
+- Added deterministic filesystem-race, lock-lifetime, resource-cap, update-channel/checksum, and WHMCS lifecycle isolation regression tests.
+- Documented the completed v0.3.7 source audit, patched controls, reporting limitations, and remaining shared-hosting trust assumptions.
+
 ## 0.3.7
 
 - Changed the cPanel account refresh action to POST-Redirect-GET so browser reload and back navigation cannot resubmit a scan.

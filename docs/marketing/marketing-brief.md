@@ -41,11 +41,11 @@ https://fixitphill.com/whm-cpanel/help4-disk-usage-cpanel-whm-whmcs-disk-inode-r
 - Largest-file and inode-heavy directory detection.
 - Cache/log/temp/backup/mail/upload/dependency hotspot detection.
 - Stale large file detection.
-- Growth hints when prior scan cache exists.
+- Growth hints between two complete scan caches.
 - Customer-safe remediation hints.
 - One-scan-at-a-time lock for foreground/cache-writing scans.
 - WHM-editable cPanel refresh limits with package-specific overrides.
-- Backup-first update checks from WHM and WHMCS using the configured release tarball.
+- Checksum-verified release updates from WHM and WHMCS; filesystem snapshots are opt-in.
 - Permissive MIT licensing with visible Help4 credit.
 
 ## Customer-Facing Copy
@@ -72,4 +72,8 @@ Help4 Disk Usage is built for busy shared-hosting servers. GUI-triggered scans u
 
 ## Launch Notes
 
-Genie is the first live validation target. gohoster and dolce01 should remain future rollout targets until WHMCS integration has been reviewed on a WHMCS staging/live admin environment.
+Genie is the canary target; dolce01 and gohoster02 are existing rollout targets. Publish version-specific deployment claims only from current verification evidence.
+
+## Claims And Privacy
+
+Use dummy accounts/domains for public screenshots, never live customer identifiers. The October review is an automated source audit plus regression coverage, not cPanel certification or independent penetration testing. Do not claim perfect security, hard tenant quotas, recursive directory totals, or market-leading speed. Safety-limited reports are lower-bound observations; growth requires two complete scans. See `docs/shared-hosting-security-2026-10.md` for details.

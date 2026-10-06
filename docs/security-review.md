@@ -6,8 +6,8 @@
 - WHM reseller: accounts where `/var/cpanel/users/<account>` contains `OWNER=<reseller>`.
 - cPanel user: authenticated account only, with relative paths rendered.
 - WHMCS admin: synced summary data across mapped servers.
-- WHMCS client: only synced rows where `client_id` matches the logged-in client.
-- WHMCS client rendering also re-checks the current `tblhosting` service ID, server ID, username, and logged-in client before displaying a row.
+- WHMCS client: only synced rows for the logged-in client, with exactly one current Active/Suspended service for that server/username.
+- Client rendering also re-checks service ID, server ID, username, logged-in client, and scan date against service registration; historical or ambiguous mappings are hidden.
 
 ## Data Locations
 
@@ -25,17 +25,17 @@
 ## Controls
 
 - Scanner prunes `virtfs`, `.cagefs`, and `.trash`.
-- Scanner does not follow symlinks.
+- Scanner anchors traversal to open parent descriptors, uses no-follow directory opens, and compares inode/device identity. It does not read file contents.
 - Scanner does not cross device boundaries from the account home.
 - Scanner does not emit absolute file paths in large-file or hotspot item lists.
 - Non-root scanner runs must use `--scope account`, must match the effective OS account, and must scan that account's home directory.
 - WHM reseller authorization is based on live `/var/cpanel/users/<account>` ownership for the account username, not cached owner metadata.
-- Result sets are capped by `HELP4_DU_TOP`.
-- Whole-run runtime is capped by `HELP4_DU_MAX_SECONDS`; it is not multiplied by the account count.
+- Retained offender candidates are capped during collection by `HELP4_DU_TOP`; entry, directory, depth, and path-memory budgets also bound traversal data.
+- Whole-run traversal is bounded by `HELP4_DU_MAX_SECONDS`, not multiplied by account count; bounded postprocessing follows, and blocked kernel I/O remains an OS concern.
 - Bounded all/owner scans rotate missing or oldest caches first and report pending account counts.
 - Cache writes are atomic.
-- WHM, cPanel, cron, and WHMCS-triggered scanner runs can share one non-blocking lock file.
-- The installer creates a root-owned lock directory and a writable lock file so users can lock but cannot create or delete lock-directory entries.
+- Installed WHM, cPanel, cron, WHMCS and default global-cache CLI runs share one non-blocking lock held through publication.
+- The installer creates a root-owned lock directory and mode-0644 lock. Users acquire the lock through a read-only handle and cannot write, create, or delete lock-directory entries.
 - cPanel user refreshes default to three per hour, with a five-minute minimum interval and a 60-second scan runtime cap.
 - WHM root can edit cPanel refresh limits, cPanel scan caps, WHM scan caps, and package-specific overrides in the WHM UI.
 - WHM and cPanel state-changing actions require POST plus a 30-minute server-side nonce.
@@ -61,6 +61,9 @@
 
 ## Residual Risks
 
+- Same-UID users can edit their account-local throttle state. UI refresh controls are not an OS resource-enforcement boundary; use host CPU/memory/I/O/process limits.
 - A compromised cPanel account can hold the shared advisory scan lock and delay plugin scans. This blocks only Help4 Disk Usage collection; the account already has the ability to run its own filesystem traversal. Root can identify the lock holder and restart collection.
 - The public update manifest is an online trust root. Operators that require stronger supply-chain control should mirror the manifest and immutable package into infrastructure they control.
 - Scan results are observations and cleanup hints, not proof that a path is safe to delete. The plugin never deletes files.
+
+See [the October assessment](shared-hosting-security-2026-10.md) for the v0.3.7 source-audit scope, five remediations, regression tests, and reporting limits.

@@ -11,7 +11,7 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
 BACKUP_DIR=""
 VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$ROOT_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
-RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz}"
+RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz}"
 UPDATE_MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json}"
 
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
@@ -26,6 +26,7 @@ CONFIG_FILE="$CACHE_DIR/config.json"
 INSTALL_META="$CACHE_DIR/install.json"
 APP_CONF="/var/cpanel/apps/help4_disk_usage.conf"
 CRON_FILE="/etc/cron.d/help4-disk-usage"
+LOGROTATE_FILE="/etc/logrotate.d/help4-disk-usage"
 
 for required in /usr/local/cpanel/bin/register_appconfig /usr/local/cpanel/scripts/install_plugin; do
   if [ ! -x "$required" ]; then
@@ -38,7 +39,7 @@ if [ -n "$BACKUP_ROOT" ]; then
   BACKUP_DIR="${BACKUP_ROOT%/}/${STAMP}"
   mkdir -p "$BACKUP_DIR"
   chmod 0700 "$BACKUP_DIR"
-  for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$CPANEL_DIR" "$CONFIG_FILE" "$APP_CONF" "$CRON_FILE"; do
+  for path in "$APP_DIR" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$CPANEL_DIR" "$CONFIG_FILE" "$APP_CONF" "$CRON_FILE" "$LOGROTATE_FILE"; do
     if [ -e "$path" ]; then
       backup_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9._-]#_#g')"
       cp -a "$path" "$BACKUP_DIR/$backup_name"
@@ -54,7 +55,7 @@ install -d -m 0755 "$CACHE_DIR"
 install -d -m 0750 "$CACHE_DIR/accounts"
 install -d -m 0755 "$LOCK_DIR"
 touch "$LOCK_DIR/scan.lock"
-chmod 0666 "$LOCK_DIR/scan.lock"
+chmod 0644 "$LOCK_DIR/scan.lock"
 
 if [ ! -e "$CONFIG_FILE" ]; then
   cat > "$CONFIG_FILE" <<'JSON'
@@ -65,7 +66,7 @@ if [ ! -e "$CONFIG_FILE" ]; then
    "cpanel_scan_max_seconds" : 60,
    "display_name" : "Disk Usage Audit",
    "package_overrides" : {},
-   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz",
+   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz",
    "scan_lock_dir" : "/var/cpanel/help4-disk-usage/locks",
    "update_manifest_url" : "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
    "whm_scan_max_seconds" : 90
@@ -81,6 +82,7 @@ CONFIG_FILE="$CONFIG_FILE" RELEASE_URL="$RELEASE_URL" UPDATE_MANIFEST_URL="$UPDA
   my $cfg = eval { decode_json($raw) } || {};
   $cfg->{display_name} ||= "Disk Usage Audit";
   $cfg->{credit_prefix} ||= "Built by";
+  $cfg->{scan_lock_dir} = "/var/cpanel/help4-disk-usage/locks";
   if (($cfg->{release_url} || "") =~ m{\Ahttps://github\.com/Help4Network/help4-disk-usage/archive/refs/(?:heads/main|tags/v[0-9.]+)\.tar\.gz\z}) {
     $cfg->{release_url} = $ENV{RELEASE_URL};
   }
@@ -120,9 +122,24 @@ cat > "$CRON_FILE" <<'CRON'
 SHELL=/bin/bash
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/cpanel/3rdparty/help4-disk-usage/bin
 
-17 */6 * * * root nice -n 10 ionice -c2 -n7 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --write-cache --lock-dir /var/cpanel/help4-disk-usage/locks >> /var/log/help4-disk-usage-scan.log 2>&1
+17 */6 * * * root nice -n 10 ionice -c2 -n7 /usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan --scope all --write-cache --quiet --lock-dir /var/cpanel/help4-disk-usage/locks >> /var/log/help4-disk-usage-scan.log 2>&1
 CRON
 chmod 0644 "$CRON_FILE"
+touch /var/log/help4-disk-usage-scan.log
+chmod 0600 /var/log/help4-disk-usage-scan.log
+install -d -m 0755 /etc/logrotate.d
+cat > "$LOGROTATE_FILE" <<'LOGROTATE'
+/var/log/help4-disk-usage-scan.log {
+    weekly
+    maxsize 1M
+    rotate 4
+    missingok
+    notifempty
+    compress
+    create 0600 root root
+}
+LOGROTATE
+chmod 0644 "$LOGROTATE_FILE"
 
 INSTALL_META="$INSTALL_META" VERSION="$VERSION" RELEASE_URL="$RELEASE_URL" UPDATE_MANIFEST_URL="$UPDATE_MANIFEST_URL" BACKUP_DIR="$BACKUP_DIR" perl -MJSON::PP -e '
   my $meta = {

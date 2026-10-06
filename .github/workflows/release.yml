@@ -35,6 +35,9 @@ jobs:
           php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
           php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
           ./tests/smoke_scanner.sh
+          perl tests/scanner_hardening.pl
+          bash tests/updater_channel.sh
+          php tests/whmcs_tenant_isolation.php
           ./tests/security_boundaries.sh
           ./tests/request_security.sh
           php tests/whmcs_ssh_security.php

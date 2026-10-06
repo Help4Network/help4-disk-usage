@@ -6,8 +6,8 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.3.7';
-const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz';
+const H4DU_VERSION = '0.3.8';
+const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz';
 const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 
 function help4_disk_usage_config()
@@ -249,16 +249,25 @@ function help4_disk_usage_clientarea($vars)
                     ->on('a.username', '=', 'h.username');
             })
             ->where('h.userid', $clientId)
+            ->whereIn('h.domainstatus', ['Active', 'Suspended'])
             ->select('a.*', 'h.domain as current_domain')
             ->orderBy('severity', 'asc')
             ->orderBy('disk_bytes', 'desc')
             ->get();
     }
     $accountRows = json_decode(json_encode($accounts), true);
-    foreach ($accountRows as &$accountRow) {
+    $visibleRows = [];
+    foreach ($accountRows as $accountRow) {
+        $current = help4_disk_usage_find_service($accountRow['whmcs_server_id'], $accountRow['username']);
+        if (!$current || (int)$current->id !== (int)$accountRow['service_id']
+            || (int)$current->userid !== $clientId
+            || !help4_disk_usage_scan_matches_service($accountRow['scanned_at'], $current)) {
+            continue;
+        }
         $accountRow['domain'] = $accountRow['current_domain'] ?: $accountRow['domain'];
         $hints = json_decode($accountRow['hints_json'] ?? '[]', true) ?: [];
         $accountRow['first_hint'] = $hints[0] ?? 'Review the latest scan before making cleanup decisions.';
+        $visibleRows[] = $accountRow;
     }
 
     return [
@@ -268,7 +277,7 @@ function help4_disk_usage_clientarea($vars)
         'requirelogin' => true,
         'forcessl' => true,
         'vars' => [
-            'accounts' => $accountRows,
+            'accounts' => $visibleRows,
             'disabled' => false,
             'displayName' => help4_disk_usage_display_name($vars),
             'creditPrefix' => help4_disk_usage_credit_prefix($vars),
@@ -1052,6 +1061,9 @@ function help4_disk_usage_save_scan_json($server, $json)
         $bad += $severity === 'bad' ? 1 : 0;
         $check += $severity === 'check' ? 1 : 0;
         $service = help4_disk_usage_find_service($server->id, $username);
+        if ($service && !help4_disk_usage_scan_matches_service($account['scanned_at'] ?? null, $service)) {
+            $service = null;
+        }
         Capsule::table('mod_help4_disk_usage_accounts')->updateOrInsert(
             ['whmcs_server_id' => (int)$server->id, 'username' => $username],
             [
@@ -1101,11 +1113,21 @@ function help4_disk_usage_save_scan_json($server, $json)
 
 function help4_disk_usage_find_service($serverId, $username)
 {
-    return Capsule::table('tblhosting')
-        ->select('id', 'userid', 'domain', 'username')
+    $matches = Capsule::table('tblhosting')
+        ->select('id', 'userid', 'domain', 'username', 'regdate', 'domainstatus')
         ->where('server', (int)$serverId)
         ->where('username', $username)
-        ->first();
+        ->whereIn('domainstatus', ['Active', 'Suspended'])
+        ->limit(2)
+        ->get();
+    return count($matches) === 1 ? $matches[0] : null;
+}
+
+function help4_disk_usage_scan_matches_service($scannedAt, $service)
+{
+    $scan = strtotime((string)$scannedAt);
+    $created = strtotime((string)($service->regdate ?? ''));
+    return $scan !== false && $created !== false && $scan >= $created;
 }
 
 function help4_disk_usage_valid_username($username)

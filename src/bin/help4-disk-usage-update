@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.7.tar.gz"
+DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
@@ -26,7 +26,7 @@ Usage:
 
 Output is JSON so WHM and WHMCS can report installed/available versions.
 When a manifest URL is configured, it should return JSON with at least:
-  {"version":"0.3.7","package_url":"https://example/package.tar.gz","sha256":"..."}
+  {"version":"0.3.8","package_url":"https://example/package.tar.gz","sha256":"..."}
 USAGE
 }
 
@@ -60,17 +60,17 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-if [ -z "$RELEASE_URL" ] && [ -f "$INSTALL_META" ]; then
-  RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$INSTALL_META")"
-fi
-if [ -z "$MANIFEST_URL" ] && [ -f "$INSTALL_META" ]; then
-  MANIFEST_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{update_manifest_url} || "";' "$INSTALL_META")"
-fi
 if [ -z "$RELEASE_URL" ] && [ -f "$CONFIG_FILE" ]; then
   RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$CONFIG_FILE")"
 fi
 if [ -z "$MANIFEST_URL" ] && [ -f "$CONFIG_FILE" ]; then
   MANIFEST_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{update_manifest_url} || "";' "$CONFIG_FILE")"
+fi
+if [ -z "$RELEASE_URL" ] && [ -f "$INSTALL_META" ]; then
+  RELEASE_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{release_url} || "";' "$INSTALL_META")"
+fi
+if [ -z "$MANIFEST_URL" ] && [ -f "$INSTALL_META" ]; then
+  MANIFEST_URL="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}||{}; print $d->{update_manifest_url} || "";' "$INSTALL_META")"
 fi
 RELEASE_URL="${RELEASE_URL:-$DEFAULT_RELEASE_URL}"
 MANIFEST_URL="${MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
@@ -292,7 +292,7 @@ if [ "$STATUS" = "current" ] && [ "$FORCE" -ne 1 ]; then
 fi
 
 INSTALL_LOG="$TMP/install.log"
-HELP4_DU_RELEASE_URL="$RELEASE_URL" "$SRC_DIR/install.sh" >"$INSTALL_LOG" 2>&1 || {
+HELP4_DU_RELEASE_URL="$RELEASE_URL" HELP4_DU_UPDATE_MANIFEST_URL="$MANIFEST_URL" "$SRC_DIR/install.sh" >"$INSTALL_LOG" 2>&1 || {
   err="$(tail -n 20 "$INSTALL_LOG" | tr '\n' ' ' | cut -c1-500)"
   json_response false error "$CURRENT" "$AVAILABLE" "install failed: $err"
   exit 7
