@@ -143,8 +143,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.8.tar.gz
-cd help4-disk-usage-0.3.8
+tar -xzf help4-disk-usage-0.3.9.tar.gz
+cd help4-disk-usage-0.3.9
 sudo ./install.sh
 ```
 
@@ -476,6 +476,8 @@ Help4 Disk Usage avoids a slow, stale page-load scan pattern:
 - top-N offender lists
 - WHMCS sync limits for staged rollout
 - checksum-verified update checks before release pulls
+
+The updater compares scanner runtime version with `install.json`, which is written only after registration and installation complete. A missing or mismatched record sets `installation_incomplete=true`; when the configured release matches that runtime, `--apply` repairs the same version without `--force`. Success requires both readbacks to agree. This detects interrupted installation, not a transaction across every plugin file or independent file-integrity verification. It does not automatically downgrade a newer runtime to an older channel.
 
 ## Screenshots
 

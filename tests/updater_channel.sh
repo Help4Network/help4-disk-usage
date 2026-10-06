@@ -41,6 +41,10 @@ cat > "$TMP_DIR/package/install.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$HELP4_DU_UPDATE_MANIFEST_URL" "$HELP4_DU_RELEASE_URL" > "$HELP4_DU_TEST_ROOT/installed-channel"
+if [ "${HELP4_DU_TEST_FAIL_READBACK:-0}" = 1 ]; then exit 0; fi
+version="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$(dirname "$0")/src/bin/help4-disk-usage-scan")"
+printf '#!/usr/bin/env bash\necho "Help4 Disk Usage scanner v%s"\n' "$version" > "$HELP4_DU_TEST_ROOT/app/bin/help4-disk-usage-scan"
+printf '{"version":"%s"}\n' "$version" > "$HELP4_DU_TEST_ROOT/cache/install.json"
 SH
 chmod 0755 "$TMP_DIR/bin/"* "$TMP_DIR/app/bin/"* "$TMP_DIR/package/install.sh"
 tar -czf "$TMP_DIR/package.tar.gz" -C "$TMP_DIR" package
@@ -58,11 +62,26 @@ perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); die "apply failed" unless $d->{
 env PATH="$TMP_DIR/bin:$PATH" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" \
   bash "$TMP_DIR/updater" --check --manifest-url https://explicit.example.test/update.json > "$TMP_DIR/result.json"
 perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); die "CLI channel precedence lost" unless $d->{manifest_url} eq "https://explicit.example.test/update.json";' "$TMP_DIR/result.json"
+# A copied scanner is not proof that registration and the rest of install completed.
+printf '{"version":"0.0.1"}\n' > "$TMP_DIR/cache/install.json"
+env PATH="$TMP_DIR/bin:$PATH" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" \
+  bash "$TMP_DIR/updater" --check > "$TMP_DIR/result.json"
+perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); die "partial installation reported current" unless $d->{installation_incomplete} && $d->{update_available};' "$TMP_DIR/result.json"
+env PATH="$TMP_DIR/bin:$PATH" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" \
+  bash "$TMP_DIR/updater" --apply > "$TMP_DIR/result.json"
+perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); die "partial install not repaired without force" unless $d->{ok} && $d->{changed} && !$d->{installation_incomplete};' "$TMP_DIR/result.json"
+printf '{"version":"0.0.1"}\n' > "$TMP_DIR/cache/install.json"
+if env PATH="$TMP_DIR/bin:$PATH" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" HELP4_DU_TEST_FAIL_READBACK=1 \
+    bash "$TMP_DIR/updater" --apply > "$TMP_DIR/result.json"; then
+  echo 'Inconsistent post-install readback was accepted' >&2
+  exit 1
+fi
+grep -q 'completed-install version readback is inconsistent' "$TMP_DIR/result.json"
 printf '{"version":"%s","package_url":"https://releases.example.test/package.tar.gz","sha256":"%064d"}\n' "$version" 0 > "$TMP_DIR/manifest.json"
 if env PATH="$TMP_DIR/bin:$PATH" HELP4_DU_CACHE_DIR="$TMP_DIR/cache" \
-    bash "$TMP_DIR/updater" --apply > "$TMP_DIR/result.json"; then
+    bash "$TMP_DIR/updater" --apply --force > "$TMP_DIR/result.json"; then
   echo 'Incorrect release checksum was accepted' >&2
   exit 1
 fi
 grep -q 'sha256 does not match' "$TMP_DIR/result.json"
-echo 'Updater channel and checksum tests passed'
+echo 'Updater channel, checksum, and partial-install repair tests passed'

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.9
+
+- Detects scanner/completed-install version mismatches so a stopped installation is not reported as current merely because the new scanner was copied first.
+- Allows reapplying the same verified release to repair such an installation without requiring `--force`.
+- Verifies runtime and completed-install version readback after a successful installer exit.
+- Added isolated updater tests for partial-install detection and repair.
+
 ## 0.3.8
 
 - Replaced pathname-based recursive traversal with parent-held directory descriptors, no-follow opens, and inode/device checks to prevent directory replacement from escaping account scope.

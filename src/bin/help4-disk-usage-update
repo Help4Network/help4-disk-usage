@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.8.tar.gz"
+DEFAULT_RELEASE_URL="https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json"
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
 CACHE_DIR="${HELP4_DU_CACHE_DIR:-/var/cpanel/help4-disk-usage}"
@@ -15,6 +15,7 @@ RELEASE_URL="${HELP4_DU_RELEASE_URL:-}"
 MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-}"
 RELEASE_NOTES_URL=""
 EXPECTED_SHA256=""
+INSTALLATION_INCOMPLETE=false
 
 usage() {
   cat <<USAGE
@@ -26,7 +27,7 @@ Usage:
 
 Output is JSON so WHM and WHMCS can report installed/available versions.
 When a manifest URL is configured, it should return JSON with at least:
-  {"version":"0.3.8","package_url":"https://example/package.tar.gz","sha256":"..."}
+  {"version":"0.3.9","package_url":"https://example/package.tar.gz","sha256":"..."}
 USAGE
 }
 
@@ -103,7 +104,7 @@ json_response() {
   local ok="$1" status="$2" current="$3" available="$4" error="$5" backup="${6:-}" changed="${7:-false}"
   OK="$ok" STATUS="$status" CURRENT="$current" AVAILABLE="$available" RELEASE_URL="$RELEASE_URL" MANIFEST_URL="$MANIFEST_URL" RELEASE_NOTES_URL="$RELEASE_NOTES_URL" PACKAGE_SHA256="$EXPECTED_SHA256" \
     UPDATE_AVAILABLE="$([ "$status" = "update_available" ] && echo true || echo false)" \
-    CHANGED="$changed" ERROR="$error" BACKUP="$backup" \
+    CHANGED="$changed" ERROR="$error" BACKUP="$backup" INSTALLATION_INCOMPLETE="$INSTALLATION_INCOMPLETE" \
     perl -MJSON::PP -e '
     my $bool = sub { $_[0] eq "true" ? JSON::PP::true : JSON::PP::false };
     my %out = (
@@ -115,6 +116,7 @@ json_response() {
       manifest_url => $ENV{MANIFEST_URL},
       update_available => $bool->($ENV{UPDATE_AVAILABLE}),
       changed => $bool->($ENV{CHANGED}),
+      installation_incomplete => $bool->($ENV{INSTALLATION_INCOMPLETE}),
     );
     $out{error} = $ENV{ERROR} if length $ENV{ERROR};
     $out{backup} = $ENV{BACKUP} if length $ENV{BACKUP};
@@ -128,6 +130,14 @@ installed_version() {
   if [ -x "$SCANNER" ]; then
     "$SCANNER" --help 2>/dev/null | sed -n 's/^Help4 Disk Usage scanner v//p' | head -n 1
   fi
+}
+
+installation_incomplete() {
+  local runtime="$1" completed=""
+  if [ -f "$INSTALL_META" ]; then
+    completed="$(perl -MJSON::PP -0777 -e 'my $d=eval{decode_json(<>)}; print $d->{version} || "" if ref($d) eq "HASH";' "$INSTALL_META")"
+  fi
+  [ -n "$runtime" ] && { [ -z "$completed" ] || [ "$runtime" != "$completed" ]; }
 }
 
 version_compare() {
@@ -185,11 +195,15 @@ if [ -n "$MANIFEST_URL" ]; then
 fi
 
 CURRENT="$(installed_version)"
+if installation_incomplete "$CURRENT"; then
+  INSTALLATION_INCOMPLETE=true
+fi
 AVAILABLE="${AVAILABLE_FROM_MANIFEST:-}"
 if [ -n "$AVAILABLE" ]; then
   if [ -z "$CURRENT" ]; then
     STATUS="not_installed"
-  elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ]; then
+  elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ] \
+    || { [ "$CURRENT" = "$AVAILABLE" ] && [ "$INSTALLATION_INCOMPLETE" = true ]; }; then
     STATUS="update_available"
   else
     STATUS="current"
@@ -275,7 +289,8 @@ fi
 
 if [ -z "$CURRENT" ]; then
   STATUS="not_installed"
-elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ]; then
+elif [ "$(version_compare "$CURRENT" "$AVAILABLE")" -lt 0 ] \
+  || { [ "$CURRENT" = "$AVAILABLE" ] && [ "$INSTALLATION_INCOMPLETE" = true ]; }; then
   STATUS="update_available"
 else
   STATUS="current"
@@ -299,5 +314,11 @@ HELP4_DU_RELEASE_URL="$RELEASE_URL" HELP4_DU_UPDATE_MANIFEST_URL="$MANIFEST_URL"
 }
 
 NEW_CURRENT="$(installed_version)"
+INSTALLATION_INCOMPLETE=false
+if installation_incomplete "$NEW_CURRENT" || [ "$NEW_CURRENT" != "$AVAILABLE" ]; then
+  INSTALLATION_INCOMPLETE=true
+  json_response false error "$NEW_CURRENT" "$AVAILABLE" "installer returned success but runtime/completed-install version readback is inconsistent"
+  exit 8
+fi
 BACKUP="$(sed -n 's/^Backup\/snapshot: //p' "$INSTALL_LOG" | tail -n 1)"
 json_response true updated "$NEW_CURRENT" "$AVAILABLE" "" "$BACKUP" true
