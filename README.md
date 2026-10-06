@@ -481,7 +481,7 @@ The updater compares scanner runtime version with `install.json`, which is writt
 
 ## Screenshots
 
-Screenshot deliverables from Genie validation are stored in:
+Public dummy-fixture screenshot deliverables are generated in:
 
 ```text
 outputs/screenshots/
@@ -508,9 +508,8 @@ With Node.js, Playwright, `zip`, and `rg` available, rebuild the privacy-checked
 
 Genie was the first live target.
 
-Verified on Genie:
+The original validation used cPanel 136.0 build 24 and checked:
 
-- cPanel 136.0 build 24.
 - WHM AppConfig registration.
 - cPanel Jupiter dynamicUI registration.
 - WHM root render.
@@ -518,6 +517,10 @@ Verified on Genie:
 - cPanel output without raw JSON or absolute `/home/` path leakage.
 - Bounded sample scans without timeout.
 - Cron installed.
+
+Current verification on **2026-10-06** covers release **0.3.9** on Genie, dolce01, gohoster02, and the WHMCS addon. All three cPanel nodes remained at **11.138.0.12**, with unchanged boot IDs and no automatic snapshots. Authenticated Genie browser tests confirmed native WHM/Jupiter navigation, one refresh POST, two read-only reloads, and mobile layout without overflow or console errors. The large account scan hit the 500,000-entry cap after 46 seconds with zero scan errors; it correctly showed incomplete coverage instead of implying a full quota result.
+
+The deployed WHMCS PHP runtime rendered its five admin views and health widget; real-database checks covered seven clients and nine visible reports. Invalid CSRF input was rejected without a remote action, and anonymous client HTTP access required login. Fleet Check/Sync passed in two-account smoke batches; their health rows remain **partial**, not proof of complete account coverage. See [the dated assessment](docs/shared-hosting-security-2026-10.md) for tested boundaries and remaining risks.
 
 The live rollout used Genie as the first validation target, followed by gohoster02 and dolce01 after the Genie and WHMCS review gates passed. Operators should still use the immutable-release, staged-limit, and verification gates in [`docs/rollout.md`](docs/rollout.md) for every environment.
 

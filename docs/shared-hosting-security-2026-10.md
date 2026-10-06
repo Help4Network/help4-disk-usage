@@ -61,6 +61,8 @@ Version 0.3.9 retains the five 0.3.8 remediations and adds completed-install ver
 - Authenticated Genie browser checks passed for the native WHM root shell and Jupiter account view. One refresh POST returned a partial report; two reloads submitted no new scans and preserved its timestamp. Desktop and 390-pixel mobile checks found no relevant console errors or page-level overflow. The native cPanel 138 controls use shadow DOM, which the test explicitly inspects.
 - Live reseller render/ownership filtering passed on the node with reseller ownership present. No reseller ownership was present on the other two nodes, so those are not claimed as positive reseller-browser tests.
 - The WHMCS addon upgraded to 0.3.9. Five admin views and its health widget rendered in the deployed PHP runtime; current entitlement checks exercised the real database for seven clients and nine visible reports, with zero anonymous rows.
+- The latest cPanel GUI scan used v0.3.9, wrote its caches as the account UID rather than root, and reached the 500,000-entry cap in 46 seconds with zero scan errors.
+- Invalid WHMCS CSRF input was rejected without invoking a remote action. Anonymous client HTTP access required login. Direct module HTTP access returned 403; that check does not attribute the block to a particular edge/native layer.
 - Host-pinned Check/Sync succeeded for all three allowed server records. Sync used two-account, 15-second smoke batches; saved health rows correctly report partial coverage and no errors, not complete fleet health.
 - Local validation and the GitHub main/tag workflows passed. Public tutorial material contains eight synthetic screenshots; it is not raw production evidence.
 
