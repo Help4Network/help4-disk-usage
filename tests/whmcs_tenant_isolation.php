@@ -80,6 +80,15 @@ namespace {
     check(help4_disk_usage_clientarea($vars)['vars']['accounts'] === [], 'former customer saw fresh report');
     $_SESSION['uid'] = 2;
     check(count(help4_disk_usage_clientarea($vars)['vars']['accounts']) === 1, 'current customer report missing');
+    $currentRows = help4_disk_usage_clientarea($vars)['vars']['accounts'];
+    check($currentRows[0]['service_url'] === 'clientarea.php?action=productdetails&id=20', 'service link bound to wrong account');
+    foreach (['../victim', '/etc/passwd', 'x//y', "x\nheader", 'x\\y'] as $path) {
+        check(!help4_disk_usage_safe_relative_path($path), 'unsafe WHMCS report path accepted');
+    }
+    $details = help4_disk_usage_report_details(['large_files_json' => json_encode([
+        ['relative_path' => '../victim', 'bytes' => 1], ['relative_path' => 'public_html/odd # & file.log', 'bytes' => 20],
+    ])]);
+    check(count($details['large_files']) === 1 && strpos($details['coverage'], 'unknown') !== false, 'legacy report path/coverage unsafe');
     $_SESSION['uid'] = 99;
     check(help4_disk_usage_clientarea($vars)['vars']['accounts'] === [], 'unrelated client saw report');
     Capsule::$services[] = service(40, 4, 'Active');

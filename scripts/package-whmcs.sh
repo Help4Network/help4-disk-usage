@@ -27,6 +27,7 @@ rm -f "$ZIP_FILE" "$CHECKSUM_FILE"
 mkdir -p "$STAGE_DIR/help4_disk_usage"
 cp -a "$MODULE_DIR/." "$STAGE_DIR/help4_disk_usage/"
 cp "$ROOT_DIR/docs/whmcs-integration.md" "$STAGE_DIR/help4_disk_usage/README.md"
+cp "$ROOT_DIR/docs/file-workflows.md" "$STAGE_DIR/help4_disk_usage/FILE-WORKFLOWS.md"
 cp "$ROOT_DIR/LICENSE" "$STAGE_DIR/help4_disk_usage/LICENSE"
 printf '%s\n' "$VERSION" > "$STAGE_DIR/help4_disk_usage/VERSION"
 find "$STAGE_DIR" -type f \( -name '._*' -o -name '.DS_Store' \) -delete

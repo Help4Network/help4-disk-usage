@@ -2,6 +2,8 @@
 
 Help4 Disk Usage includes a standalone WHMCS addon for deployment, server health, support reporting, and customer-facing disk and inode summaries.
 
+Version 1.0.0 includes admin account drill-downs and expanded client large-file, recursive-directory, and cleanup-hotspot reports. Service links are regenerated from current entitlement, not old customer associations. Native cPanel File Manager jumps are available after signing into cPanel and opening **Files > Help4 Disk Usage**; WHMCS does not store reusable customer SSO links.
+
 ## Availability
 
 Download the latest standalone package from the project [GitHub Releases](https://github.com/Help4Network/help4-disk-usage/releases/latest):
@@ -215,6 +217,8 @@ index.php?m=help4_disk_usage
 The client navigation link is added below **Services** when **Client Area Reports** is enabled. Every rendered row is rechecked against the logged-in client's current service ID, server ID, and cPanel username. Unmapped cPanel accounts remain admin-only.
 
 ## Upgrade
+
+For 1.0.0, deploy PHP files and `templates/clientarea.tpl` together. Open the addon after uploading so WHMCS runs the upgrade hook: it adds the nullable `report_json` column idempotently, preserving existing reports and associations. Sync to populate detailed reports; older reports retain large-file/category fallbacks and show unknown coverage rather than implying completeness. A rollback to 0.3.9 ignores the additive column; do not drop it during rollback.
 
 Do not deactivate the addon for a normal upgrade. WHMCS detects a new addon version from the module configuration and calls the addon upgrade function the first time the updated module is accessed.
 

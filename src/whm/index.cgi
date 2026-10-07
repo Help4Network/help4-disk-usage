@@ -5,6 +5,9 @@ use File::Spec;
 use File::Path qw(make_path);
 use JSON::PP qw(decode_json);
 use POSIX qw(strftime);
+use FindBin;
+use lib "$FindBin::Bin/../lib", '/usr/local/cpanel/3rdparty/help4-disk-usage/lib';
+use Help4::DiskUsage::Report qw(report_html report_export);
 
 my $APP = 'Help4 Disk Usage';
 my $DEFAULT_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
@@ -84,15 +87,47 @@ if ($has_action && !$valid_action) {
 }
 
 my @accounts = grep { allowed($_, $is_root, \%owned) } read_account_caches();
+my $search = substr($q{search} || '', 0, 128);
+@accounts = grep { index(lc(($_->{user} || '') . ' ' . ($_->{owner} || '')), lc($search)) >= 0 } @accounts if $search && !$q{view_account};
+my $sort_by = ($q{sort} || '') =~ /\A(?:disk|inodes|account|status)\z/ ? $q{sort} : 'status';
 @accounts = sort {
-    severity_rank($b->{severity}) <=> severity_rank($a->{severity})
+    ($sort_by eq 'account' ? ($a->{user} || '') cmp ($b->{user} || '')
+        : $sort_by eq 'inodes' ? ($b->{inode_count} || 0) <=> ($a->{inode_count} || 0)
+        : $sort_by eq 'disk' ? ($b->{disk_bytes} || 0) <=> ($a->{disk_bytes} || 0)
+        : severity_rank($b->{severity}) <=> severity_rank($a->{severity}))
     || ($b->{disk_bytes} || 0) <=> ($a->{disk_bytes} || 0)
     || ($a->{user} || '') cmp ($b->{user} || '')
 } @accounts;
 
-my $page_content = page_content(\@accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce);
-print "Content-Type: text/html; charset=utf-8\r\n\r\n";
+my ($detail) = $q{view_account} ? grep { ($_->{user} || '') eq clean_user($q{view_account}) } @accounts : ();
+if ($q{view_account} && !$detail) {
+    print "Status: 404 Not Found\r\nCache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nAccount report unavailable.\n";
+    exit 0;
+}
+if ($detail && ($ENV{REQUEST_METHOD} || 'GET') eq 'GET' && ($q{export} || '') =~ /\A(?:csv|json)\z/) {
+    my $type = $q{export} eq 'json' ? 'application/json' : 'text/csv';
+    my $user = clean_user($detail->{user});
+    print "Cache-Control: no-store\r\nContent-Type: $type; charset=utf-8\r\nContent-Disposition: attachment; filename=\"disk-usage-$user.$q{export}\"\r\nX-Content-Type-Options: nosniff\r\n\r\n";
+    print report_export($detail, $q{export});
+    exit 0;
+}
+my $page_content = $detail
+    ? detail_content($detail, $nonce, $notice, $config)
+    : page_content(\@accounts, $notice, $auth_user, $is_root, $config, $update_status, $nonce);
+print "Cache-Control: no-store, max-age=0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
 render_whm_page($page_content, $config->{display_name} || $APP);
+
+sub detail_content {
+    my ($a, $nonce, $notice, $config) = @_;
+    my $user = clean_user($a->{user});
+    my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
+    return '<main class="h4du-page wrap"><header class="topbar"><div><a href="index.cgi">All visible accounts</a><h1>Account: ' . h($user) . '</h1></div><div class="actions">'
+        . action_form('refresh', 'Rescan account', $nonce, $user)
+        . '<a class="button secondary" href="index.cgi?view_account=' . h($user) . '&amp;export=csv">Download CSV</a>'
+        . '<a class="button secondary" href="index.cgi?view_account=' . h($user) . '&amp;export=json">Download JSON</a>'
+        . '</div></header>' . $notice_html . report_html($a) . credit_html($config) . '</main>'
+        . '<script src="/help4-disk-usage/help4-disk-usage.js" defer></script>';
+}
 
 sub render_whm_page {
     my ($content, $title) = @_;
@@ -129,6 +164,7 @@ sub page_content {
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
     my $settings = $is_root ? settings_panel($config, $nonce) : '';
     my $updates = $is_root ? update_panel($config, $update_status, $nonce) : '';
+    my $sort_options = join '', map { '<option value="' . $_ . '"' . ($_ eq $sort_by ? ' selected' : '') . '>' . ucfirst($_) . '</option>' } qw(status disk inodes account);
     return <<"HTML";
   <main class="h4du-page wrap">
     <header class="topbar">
@@ -148,6 +184,12 @@ sub page_content {
     </section>
     <section>
       <h2>Actionable Offenders</h2>
+      <form method="get" action="index.cgi" class="report-tools">
+        <label>Search account or owner<input type="search" name="search" value="@{[h($search)]}"></label>
+        <label>Sort by<select name="sort">$sort_options</select></label>
+        <button class="button secondary" type="submit">Filter accounts</button>
+        <a href="index.cgi">Reset</a>
+      </form>
       <table>
         <thead>
           <tr>
@@ -223,7 +265,7 @@ sub account_row {
     my $issue = top_issue($a);
     my $home = $is_root ? '<div class="path">' . h($a->{home} || '') . '</div>' : '';
     return '<tr>' .
-        '<td><strong>' . h($a->{user}) . '</strong>' . $home . '</td>' .
+        '<td><a href="index.cgi?view_account=' . h($a->{user}) . '"><strong>' . h($a->{user}) . '</strong></a>' . $home . '</td>' .
         '<td>' . h($a->{owner} || '') . '</td>' .
         '<td><span class="pill ' . h($a->{severity} || 'unknown') . '">' . h($a->{severity} || 'unknown') . '</span></td>' .
         '<td>' . fmt_bytes($a->{disk_bytes} || 0) . '</td>' .
@@ -288,7 +330,7 @@ sub default_config {
         scan_lock_dir                 => File::Spec->catdir($CACHE_DIR, 'locks'),
         display_name                  => 'Disk Usage Audit',
         credit_prefix                 => 'Built by',
-        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz',
+        release_url                   => 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.0.tar.gz',
         update_manifest_url           => $DEFAULT_MANIFEST_URL,
         whm_scan_max_seconds          => 90,
         cpanel_refreshes_per_hour     => 3,
@@ -309,7 +351,7 @@ sub load_config {
     $cfg->{scan_lock_dir} = File::Spec->catdir($CACHE_DIR, 'locks');
     $cfg->{display_name} = clean_label($cfg->{display_name}, 'Disk Usage Audit');
     $cfg->{credit_prefix} = clean_label($cfg->{credit_prefix}, 'Built by');
-    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz';
+    $cfg->{release_url} = clean_url($cfg->{release_url}) || 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.0.tar.gz';
     $cfg->{update_manifest_url} = clean_url($cfg->{update_manifest_url}) || $DEFAULT_MANIFEST_URL;
     $cfg->{whm_scan_max_seconds} = bounded_int($cfg->{whm_scan_max_seconds}, 10, 1800, 90);
     $cfg->{cpanel_refreshes_per_hour} = bounded_int($cfg->{cpanel_refreshes_per_hour}, 1, 24, 3);

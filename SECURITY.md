@@ -15,6 +15,8 @@ Include the affected tag, cPanel/WHM or WHMCS version, actor privilege, syntheti
 - Root may see all accounts; resellers may see currently owned accounts; cPanel users may see their own account only.
 - WHMCS clients require a current, unique Active/Suspended service mapping. Old or ambiguous mappings must fail closed.
 - The scanner reads metadata, never file contents, never follows directory symlinks, and never performs cleanup.
+- File Manager navigation selects only a row in the authenticated account cache, resolves its directory beneath the passwd home, and uses a session-relative native route. It does not accept arbitrary absolute paths, stored SSO credentials, or cross-account selectors. Native cPanel permissions remain authoritative at navigation time.
+- Downloads apply the same account/reseller scope as HTML. Structured exports allowlist fields, omit server home paths, and neutralize spreadsheet formulas in CSV text. Public tutorial assets must use synthetic data.
 - Cache-writing scans must retain one shared lock until publication and bound retained filesystem data.
 - WHM/cPanel mutations require authenticated identity, POST, and a short-lived nonce. WHMCS actions depend on the host application's dispatcher, admin permissions, and CSRF checks.
 - Root installation/update requires HTTPS and a trusted manifest digest. The online manifest and its publisher remain trusted; the digest is not an independent release signature.

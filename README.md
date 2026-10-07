@@ -2,6 +2,8 @@
 
 Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-support reporting.
 
+**1.0.0** adds actionable account drill-downs, recursive directory-tree rankings, safe native File Manager navigation, report search/sort, copying, and exports. It does not introduce a privileged deletion or file-content API.
+
 Help4 Disk Usage turns the original Help4 Network [`find_large_files_and_inodes`](https://github.com/Help4Network/find_large_files_and_inodes) scanner into a public, installable product for hosting providers:
 
 - A WHM plugin for root and reseller disk/inode audits.
@@ -31,6 +33,7 @@ src/whm/index.cgi                                     WHM root/reseller dashboar
 src/whm/templates/index.tmpl                          Native WHM master-template wrapper
 src/cpanel/index.live.pl                              cPanel account page
 src/static/                                           Shared UI assets
+src/lib/Help4/DiskUsage/Report.pm                      Scoped report rendering, exports, native file navigation
 packaging/                                            cPanel/WHM plugin metadata
 integrations/whmcs/modules/addons/help4_disk_usage/   WHMCS addon module
 docs/                                                 Security, validation, and marketing notes
@@ -56,6 +59,8 @@ CHANGELOG.md                                          Release history
   - cache, log, temp, backup, mail, dependency, and upload hotspots
   - growth deltas between two complete scans
 - Visible `scanned_at` timestamps and scan completeness.
+- Click an account for its file/directory report, search/sort and export retained entries, or filter accounts by username/owner.
+- Recursive directory-tree byte and entry rankings alongside the original direct-file rankings.
 - Root-editable scan limits for WHM and cPanel refreshes.
 - Shared cache-writing scan lock held through traversal and cache publication.
 - Whole-run scan budgets with oldest-cache-first rotation for large fleets.
@@ -73,6 +78,9 @@ CHANGELOG.md                                          Release history
 - User-triggered refreshes are rate limited by default.
 - cPanel refresh limits can be overridden by cPanel package name.
 - Refresh actions are POST-only and protected by an account-local nonce.
+- Each file row opens its containing directory in native File Manager; directory rows open that directory. The new tab preserves the report, and relative URLs retain the authenticated cPanel session.
+- Search paths, sort by size/count/date/path, page through retained entries, copy a relative path, export filtered CSV results, or download the full retained report as CSV/JSON.
+- Freshness, coverage, duration, errors, growth between complete scans, and refresh policy are visible. Removed or out-of-home symlink paths fail closed.
 
 ### WHMCS
 
@@ -88,6 +96,7 @@ CHANGELOG.md                                          Release history
 - Manual deployment command when one-click SSH deploy is unavailable.
 - Per-account scan data mapped to exactly one current Active/Suspended `tblhosting` service by server ID and cPanel username; ambiguous or historical mappings are hidden from clients.
 - Customer-area report at `index.php?m=help4_disk_usage`.
+- Detailed customer large-file/tree/hotspot reports and admin account drill-downs. Customer links lead only to their currently entitled hosting service; use WHMCS's native control-panel login there, then open the cPanel report for direct File Manager jumps.
 - Client navbar link when enabled.
 - Event log for deploy/check/sync results.
 
@@ -105,7 +114,7 @@ The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md
 
 - cPanel & WHM with the Jupiter theme.
 - Root shell access for install.
-- Perl with common core modules: `File::Find`, `File::Path`, `File::Spec`, `Fcntl`, `JSON::PP`, `POSIX`, `Sys::Hostname`.
+- Perl with common core modules: `File::Path`, `File::Spec`, `Cwd`, `Fcntl`, `Encode`, `JSON::PP`, `POSIX`, `Sys::Hostname`.
 - `/usr/local/cpanel/bin/register_appconfig`
 - `/usr/local/cpanel/scripts/install_plugin`
 - `/usr/local/cpanel/scripts/uninstall_plugin`
@@ -143,8 +152,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-0.3.9.tar.gz
-cd help4-disk-usage-0.3.9
+tar -xzf help4-disk-usage-1.0.0.tar.gz
+cd help4-disk-usage-1.0.0
 sudo ./install.sh
 ```
 
@@ -429,7 +438,7 @@ Every account traversal also has memory/work safety limits, independent of refre
 | Individual relative path | 4,096 bytes | fixed |
 | Retained offender rows | 25 | `--top` / `HELP4_DU_TOP` |
 
-These advanced scanner limits are not package overrides in the WHM UI. The scanner streams directory entries and keeps bounded top-N file candidates. On a timeout, safety limit, unreadable directory, or detected replacement race, it publishes `scan_complete=false`, `errors`, and a `limit_reason` when applicable. Disk/inode totals are lower bounds, not quota totals. Growth is suppressed unless both snapshots are complete. Directory rankings count **direct regular-file children**, not recursive subtree totals; inode totals count observed entries, not deduplicated hard links. Disk totals use logical file sizes, not allocated blocks, filesystem quotas, database storage outside the home, or a consistent snapshot of an actively changing filesystem.
+These advanced scanner limits are not package overrides in the WHM UI. The scanner streams directory entries and keeps bounded top-N file candidates. On a timeout, safety limit, unreadable directory, or detected replacement race, it publishes `scan_complete=false`, `errors`, and a `limit_reason` when applicable. Disk/inode totals are lower bounds, not quota totals. Growth is suppressed unless both snapshots are complete. Direct-directory rankings count **direct regular-file children**; 1.0.0 also includes separately labeled recursive tree bytes/entries. Trees overlap, so do not sum parent and child rows. Interrupted branches and their ancestors can be absent from tree rankings. Inode totals count observed entries, not deduplicated hard links. Disk totals use logical file sizes, not allocated blocks, filesystem quotas, database storage outside the home, or a consistent snapshot of an actively changing filesystem.
 
 The runtime alarm bounds traversal; sorting a bounded directory set and cache serialization follow afterward. Blocking kernel I/O is not an absolute wall-clock guarantee. Cron runs at reduced CPU/I/O priority, suppresses JSON on stdout, and rotates its root-only diagnostic log weekly or at the next logrotate run after exceeding 1 MiB, retaining four rotations.
 

@@ -6,8 +6,8 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '0.3.9';
-const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz';
+const H4DU_VERSION = '1.0.0';
+const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.0.tar.gz';
 const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 
 function help4_disk_usage_config()
@@ -124,6 +124,7 @@ function help4_disk_usage_activate()
                 $table->text('hints_json')->nullable();
                 $table->text('large_files_json')->nullable();
                 $table->text('hotspots_json')->nullable();
+                $table->mediumText('report_json')->nullable();
                 $table->timestamps();
                 $table->unique(['whmcs_server_id', 'username'], 'h4du_server_user_unique');
                 $table->index(['client_id', 'service_id'], 'h4du_client_service_idx');
@@ -164,6 +165,12 @@ function help4_disk_usage_deactivate()
 
 function help4_disk_usage_upgrade($vars)
 {
+    if (Capsule::schema()->hasTable('mod_help4_disk_usage_accounts')
+        && !Capsule::schema()->hasColumn('mod_help4_disk_usage_accounts', 'report_json')) {
+        Capsule::schema()->table('mod_help4_disk_usage_accounts', function ($table) {
+            $table->mediumText('report_json')->nullable();
+        });
+    }
     if (!Capsule::schema()->hasTable('mod_help4_disk_usage_events')) {
         Capsule::schema()->create('mod_help4_disk_usage_events', function ($table) {
             $table->increments('id');
@@ -210,7 +217,9 @@ function help4_disk_usage_output($vars)
         echo help4_disk_usage_notice($message['status'], $message['message']);
     }
 
-    if ($view === 'health') {
+    if ($view === 'report') {
+        echo help4_disk_usage_account_detail_page($moduleLink, (int)($_GET['report_id'] ?? 0));
+    } elseif ($view === 'health') {
         echo help4_disk_usage_health_page($moduleLink, $vars);
     } elseif ($view === 'servers') {
         echo help4_disk_usage_servers_page($moduleLink, $vars);
@@ -267,6 +276,8 @@ function help4_disk_usage_clientarea($vars)
         $accountRow['domain'] = $accountRow['current_domain'] ?: $accountRow['domain'];
         $hints = json_decode($accountRow['hints_json'] ?? '[]', true) ?: [];
         $accountRow['first_hint'] = $hints[0] ?? 'Review the latest scan before making cleanup decisions.';
+        $accountRow['details'] = help4_disk_usage_report_details($accountRow);
+        $accountRow['service_url'] = 'clientarea.php?action=productdetails&id=' . (int)$current->id;
         $visibleRows[] = $accountRow;
     }
 
@@ -537,7 +548,47 @@ function help4_disk_usage_accounts_page($moduleLink)
 
     return '<h2>Customer Account Reports</h2>'
         . '<p class="h4du-muted">These rows are safe for support workflows and map scan findings back to WHMCS services when the cPanel username matches a hosting service.</p>'
-        . help4_disk_usage_accounts_table($query, true);
+        . help4_disk_usage_accounts_table($query, true, $moduleLink);
+}
+
+function help4_disk_usage_report_details($row)
+{
+    $raw = json_decode($row['report_json'] ?? '', true);
+    $raw = is_array($raw) ? $raw : [];
+    $out = ['coverage' => array_key_exists('scan_complete', $raw)
+        ? (!empty($raw['scan_complete']) ? 'Complete traversal' : 'Partial coverage: lower-bound totals')
+        : 'Coverage unknown: sync the latest report'];
+    foreach (['large_files', 'stale_large_files', 'size_hotspots', 'inode_hotspots', 'tree_size_hotspots', 'tree_inode_hotspots'] as $key) {
+        $items = $raw[$key] ?? ($key === 'large_files' ? json_decode($row['large_files_json'] ?? '[]', true) : []);
+        $out[$key] = help4_disk_usage_sanitize_scan_items($items, ['relative_path', 'bytes', 'files', 'mtime']);
+    }
+    $out['category_hotspots'] = help4_disk_usage_sanitize_scan_items(
+        $raw['category_hotspots'] ?? json_decode($row['hotspots_json'] ?? '[]', true), ['category', 'bytes', 'files', 'hint']);
+    return $out;
+}
+
+function help4_disk_usage_account_detail_page($moduleLink, $reportId)
+{
+    $row = $reportId > 0 ? Capsule::table('mod_help4_disk_usage_accounts')->where('id', $reportId)->first() : null;
+    if (!$row) {
+        return '<div class="alert alert-info">Account report unavailable.</div>';
+    }
+    $details = help4_disk_usage_report_details((array)$row);
+    $html = '<a href="' . help4_disk_usage_e($moduleLink) . '&amp;view=accounts">Customer Account Reports</a>'
+        . '<h2>' . help4_disk_usage_e($row->username) . '</h2><p>' . help4_disk_usage_e($details['coverage'])
+        . ' &middot; Last scan: ' . help4_disk_usage_e($row->scanned_at ?: 'unknown') . '</p>';
+    $current = help4_disk_usage_find_service($row->whmcs_server_id, $row->username);
+    if ($current && (int)$current->id === (int)$row->service_id && help4_disk_usage_scan_matches_service($row->scanned_at, $current)) {
+        $html .= '<p><a class="btn btn-default" href="clientshosting.php?id=' . (int)$current->id . '">Current hosting service</a></p>';
+    }
+    foreach (['large_files' => 'Large files', 'stale_large_files' => 'Stale large files', 'tree_size_hotspots' => 'Largest directory trees', 'tree_inode_hotspots' => 'Directory trees with most entries', 'size_hotspots' => 'Largest directories (direct files)', 'inode_hotspots' => 'Directories with most direct files'] as $key => $title) {
+        $html .= '<h3>' . $title . '</h3><div class="table-responsive"><table class="datatable h4du-table"><thead><tr><th>Relative path</th><th>Bytes</th><th>Files / subtree entries</th><th>Modified (UTC)</th></tr></thead><tbody>';
+        foreach ($details[$key] as $item) {
+            $html .= '<tr><td style="overflow-wrap:anywhere">' . help4_disk_usage_e($item['relative_path'] ?? '') . '</td><td>' . help4_disk_usage_e(help4_disk_usage_bytes($item['bytes'] ?? 0)) . '</td><td>' . number_format($item['files'] ?? 0) . '</td><td>' . help4_disk_usage_e($item['mtime'] ?? '') . '</td></tr>';
+        }
+        $html .= '</tbody></table></div>';
+    }
+    return $html;
 }
 
 function help4_disk_usage_events_page()
@@ -1078,6 +1129,7 @@ function help4_disk_usage_save_scan_json($server, $json)
                 'hints_json' => json_encode(help4_disk_usage_sanitize_text_list($account['remediation_hints'] ?? [])),
                 'large_files_json' => json_encode(help4_disk_usage_sanitize_scan_items($account['large_files'] ?? [], ['relative_path', 'bytes', 'mtime'])),
                 'hotspots_json' => json_encode(help4_disk_usage_sanitize_scan_items($account['category_hotspots'] ?? [], ['category', 'bytes', 'files', 'hint'])),
+                'report_json' => json_encode(help4_disk_usage_bounded_report($account)),
                 'updated_at' => date('Y-m-d H:i:s'),
                 'created_at' => date('Y-m-d H:i:s'),
             ]
@@ -1175,7 +1227,14 @@ function help4_disk_usage_sanitize_scan_items($items, $allowedKeys)
             if (in_array($key, ['bytes', 'files'], true)) {
                 $row[$key] = max(0, (int)$item[$key]);
             } else {
-                $row[$key] = substr(trim((string)$item[$key]), 0, 500);
+                if (!is_scalar($item[$key])) { continue; }
+                $value = (string)$item[$key];
+                if ($key === 'relative_path') {
+                    if (!help4_disk_usage_safe_relative_path($value)) { continue 2; }
+                    $row[$key] = $value;
+                } else {
+                    $row[$key] = substr(trim($value), 0, 500);
+                }
             }
         }
         if ($row) {
@@ -1186,6 +1245,29 @@ function help4_disk_usage_sanitize_scan_items($items, $allowedKeys)
         }
     }
     return $out;
+}
+
+function help4_disk_usage_safe_relative_path($path)
+{
+    if (!is_string($path) || $path === '' || strlen($path) > 4096
+        || $path[0] === '/' || preg_match('/[\x00-\x1f\x7f\\\\]/', $path)) {
+        return false;
+    }
+    if ($path === '.') { return true; }
+    foreach (explode('/', $path) as $part) {
+        if ($part === '' || $part === '.' || $part === '..') { return false; }
+    }
+    return true;
+}
+
+function help4_disk_usage_bounded_report($account)
+{
+    $report = ['scan_complete' => !empty($account['scan_complete'])];
+    foreach (['large_files', 'stale_large_files', 'size_hotspots', 'inode_hotspots', 'tree_size_hotspots', 'tree_inode_hotspots'] as $key) {
+        $report[$key] = help4_disk_usage_sanitize_scan_items($account[$key] ?? [], ['relative_path', 'bytes', 'files', 'mtime']);
+    }
+    $report['category_hotspots'] = help4_disk_usage_sanitize_scan_items($account['category_hotspots'] ?? [], ['category', 'bytes', 'files', 'hint']);
+    return $report;
 }
 
 function help4_disk_usage_record_server_state($server, $status, $extra = null, $error = null)
@@ -1219,7 +1301,7 @@ function help4_disk_usage_event($serverId, $type, $status, $message, $details)
     ]);
 }
 
-function help4_disk_usage_accounts_table($rows, $showClient)
+function help4_disk_usage_accounts_table($rows, $showClient, $moduleLink = '')
 {
     $html = '<table class="datatable h4du-table"><thead><tr><th>Account</th>';
     if ($showClient) {
@@ -1228,7 +1310,11 @@ function help4_disk_usage_accounts_table($rows, $showClient)
     $html .= '<th>Status</th><th>Disk</th><th>Inodes</th><th>Last Scan</th><th>Support Hints</th></tr></thead><tbody>';
     foreach ($rows as $row) {
         $hints = json_decode($row->hints_json ?? '[]', true) ?: [];
-        $html .= '<tr><td><strong>' . help4_disk_usage_e($row->username) . '</strong><br><span class="h4du-muted">' . help4_disk_usage_e($row->domain ?: 'no domain mapped') . '</span></td>';
+        $name = '<strong>' . help4_disk_usage_e($row->username) . '</strong>';
+        if ($moduleLink !== '') {
+            $name = '<a href="' . help4_disk_usage_e($moduleLink) . '&amp;view=report&amp;report_id=' . (int)$row->id . '">' . $name . '</a>';
+        }
+        $html .= '<tr><td>' . $name . '<br><span class="h4du-muted">' . help4_disk_usage_e($row->domain ?: 'no domain mapped') . '</span></td>';
         if ($showClient) {
             $html .= '<td>' . ($row->client_id ? 'Client #' . (int)$row->client_id . '<br>Service #' . (int)$row->service_id : '<span class="h4du-muted">not mapped</span>') . '</td>';
         }

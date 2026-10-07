@@ -36,6 +36,8 @@ jobs:
           php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
           ./tests/smoke_scanner.sh
           perl tests/scanner_hardening.pl
+          perl tests/file_workflows.pl
+          perl tests/tree_rankings.pl
           bash tests/updater_channel.sh
           php tests/whmcs_tenant_isolation.php
           ./tests/security_boundaries.sh
@@ -52,6 +54,17 @@ jobs:
           archive_dir="$(dirname "$archive")"
           archive_name="$(basename "$archive")"
           (cd "$archive_dir" && sha256sum "$archive_name" > "$archive_name.sha256")
+
+      - name: Set up browser test runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Browser workflow tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/h4du-ui" --no-save playwright@1.54.1
+          "$RUNNER_TEMP/h4du-ui/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/h4du-ui/node_modules" node tests/browser_workflows.js
 
       - name: Publish GitHub release assets
         env:

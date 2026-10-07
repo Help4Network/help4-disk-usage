@@ -75,7 +75,10 @@ async function cpanelFixture(page, partial = false) {
       errors: 0,
       disk_bytes: 48 * 1024 ** 3,
       inode_count: partial ? 500000 : 184220,
-      scanned_at: '2026-10-06T18:20:00Z',
+      scanned_at: '2026-10-07T12:20:00Z',
+      scanned_at_epoch: Math.floor(Date.parse('2026-10-07T12:20:00Z') / 1000),
+      duration_seconds: 8,
+      report_policy: {large_mb: 100, stale_days: 180, top: 25},
       remediation_hints: partial
         ? ['Scan coverage is incomplete. Treat totals as lower bounds and ask your host to review coverage.']
         : ['Move retained backup archives off-account after confirming recovery requirements.', 'Review application cache retention before removing generated files.'],
@@ -87,6 +90,8 @@ async function cpanelFixture(page, partial = false) {
       stale_large_files: [],
       inode_hotspots: [{ relative_path: 'public_html/wp-content/cache/pages', files: 120000, bytes: 12 * 1024 ** 3 }],
       size_hotspots: [{ relative_path: 'backups', files: 5, bytes: 32 * 1024 ** 3 }],
+      tree_size_hotspots: [{ relative_path: 'public_html', files: 152400, bytes: 16 * 1024 ** 3 }],
+      tree_inode_hotspots: [{ relative_path: 'public_html/wp-content/cache', files: 120100, bytes: 12 * 1024 ** 3 }],
     }));
     const response = execFileSync('perl', [path.join(root, 'src/cpanel/index.live.pl')], {
       encoding: 'utf8',
@@ -157,6 +162,7 @@ body{margin:0;background:#f6f7f9;color:#151923;font:14px/1.45 -apple-system,Blin
 async function shot(page, html, file, viewport = { width: 1440, height: 950 }) {
   await page.setViewportSize(viewport);
   await page.setContent(html, { waitUntil: 'load' });
+  await page.addScriptTag({path: path.join(root, 'src/static/help4-disk-usage.js')});
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.screenshot({ path: path.join(outDir, file), fullPage: true });
 }

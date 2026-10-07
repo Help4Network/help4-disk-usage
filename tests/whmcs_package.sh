@@ -24,13 +24,16 @@ if printf '%s\n' "$entries" | grep -Eq '(^/|(^|/)\.\.(/|$)|(^|/)\._|(^|/)\.DS_St
 fi
 
 VERSION="$(unzip -p "$ZIP_FILE" help4_disk_usage/VERSION | tr -d '\r\n')"
-unzip -p "$ZIP_FILE" help4_disk_usage/help4_disk_usage.php \
-  | grep -q "const H4DU_VERSION = '$VERSION';"
-unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Install$'
-unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Upgrade$'
-unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q '^## Remove the Addon$'
-unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q 'previous immutable release zip and checksum'
-if unzip -p "$ZIP_FILE" help4_disk_usage/README.md | grep -q 'modules/addons/help4_disk_usage\.backup'; then
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+unzip -p "$ZIP_FILE" help4_disk_usage/help4_disk_usage.php > "$TMP_DIR/module.php"
+unzip -p "$ZIP_FILE" help4_disk_usage/README.md > "$TMP_DIR/README.md"
+grep -q "const H4DU_VERSION = '$VERSION';" "$TMP_DIR/module.php"
+grep -q '^## Install$' "$TMP_DIR/README.md"
+grep -q '^## Upgrade$' "$TMP_DIR/README.md"
+grep -q '^## Remove the Addon$' "$TMP_DIR/README.md"
+grep -q 'previous immutable release zip and checksum' "$TMP_DIR/README.md"
+if grep -q 'modules/addons/help4_disk_usage\.backup' "$TMP_DIR/README.md"; then
   echo "WHMCS package documentation stores backups below the document root." >&2
   exit 1
 fi

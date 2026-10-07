@@ -92,6 +92,30 @@
   font-size: 12px;
 }
 
+.h4du-page .button.secondary {
+  background: #fff;
+  color: #245a91;
+  border: 1px solid #b9c8d8;
+}
+
+.h4du-page button:disabled { opacity: .55; cursor: default; }
+.h4du-page [hidden] { display: none !important; }
+.h4du-page .metrics .scan-date { font-size: 14px; overflow-wrap: anywhere; }
+.h4du-page .coverage-line { color: #506176; }
+.h4du-page .report-nav { display: flex; flex-wrap: wrap; gap: 8px 18px; padding-block: 8px; border-block: 1px solid #dde2ea; }
+.h4du-page .report-nav a { color: #245a91; }
+.h4du-page .report-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.h4du-page .report-tools label { display: grid; gap: 4px; font-size: 12px; min-width: 0; }
+.h4du-page .report-tools label:first-child { flex: 1 1 220px; }
+.h4du-page .report-tools input,
+.h4du-page .report-tools select { min-height: 36px; border: 1px solid #b9c8d8; border-radius: 4px; background: #fff; padding: 6px 8px; font: inherit; width: 100%; }
+.h4du-page .file-report { overflow: visible; }
+.h4du-page .table-scroll { overflow-x: auto; max-width: 100%; }
+.h4du-page .file-report td.path { width: 44%; margin: 0; }
+.h4du-page .pagination { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.h4du-page .action-status { min-height: 20px; margin-top: 12px; }
+.h4du-page :focus-visible { outline: 2px solid #1f6feb; outline-offset: 2px; }
+
 .h4du-page .actions {
   display: flex;
   flex-wrap: wrap;

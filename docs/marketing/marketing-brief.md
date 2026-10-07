@@ -1,5 +1,9 @@
 # Help4 Disk Usage Marketing Brief
 
+## 1.0.0 File Workflows
+
+Customers can click an offender path or File Manager action to open its native cPanel location in a separate tab, then use native download, preview, move, permissions and trash controls. The plugin itself never deletes files or reads their contents. Search/sort/paging/copy/export operate on bounded retained metadata, not a complete filesystem index. Recursive tree rankings are separate from direct-file rankings; overlapping trees cannot be summed. WHM has scoped account drill-downs; WHMCS has detailed reports and current-service links, not embedded SSO credentials. Use `docs/file-workflows.md` for the tutorial sequence and safety notes. Do not describe partial coverage as complete or promise automatic cleanup.
+
 ## One-Line Positioning
 
 Help4 Disk Usage gives hosting teams fast, support-ready disk and inode reports for WHM, cPanel, and WHMCS.

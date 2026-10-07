@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0
+
+- Add account-safe cPanel File Manager jumps from large/stale files and directory rankings. Files open their containing directory; directories open themselves in a new tab, preserving the report and native session. Missing, invalid, or cross-home symlink locations fail closed.
+- Add search, numeric/date/path sorting, paging, relative-path copying, filtered CSV exports, and account-scoped CSV/JSON downloads. Spreadsheet formula prefixes are neutralized and exports retain the Help4 Network credit.
+- Add WHM account filtering and scoped account drill-downs with the same report tools. Reseller authorization is applied before detail/export selection.
+- Add recursive directory-tree byte and entry rankings in addition to direct-file directory rankings. Retention remains bounded; unfinished trees are not promoted as complete observations.
+- Display coverage, scan age, duration, errors, complete-scan growth, and report thresholds. Keep cPanel POST-Redirect-GET and disable repeat refresh submissions while a request is running.
+- Add WHMCS admin account details and client large-file/directory-tree/hotspot reports, plus current-service navigation. Add an idempotent nullable report-storage column without dropping historical data.
+- Preserve the 0.3.8 shared-hosting controls and 0.3.9 updater recovery checks; no cleanup endpoint, unrestricted path selector, embedded account credentials, or automatic filesystem backups are introduced.
+
 ## 0.3.9
 
 - Detects scanner/completed-install version mismatches so a stopped installation is not reported as current merely because the new scanner was copied first.

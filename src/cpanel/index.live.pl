@@ -6,6 +6,9 @@ use File::Path qw(make_path);
 use File::Spec;
 use Fcntl qw(:flock);
 use JSON::PP qw(decode_json);
+use FindBin;
+use lib "$FindBin::Bin/../lib", '/usr/local/cpanel/3rdparty/help4-disk-usage/lib';
+use Help4::DiskUsage::Report qw(report_html report_export filemanager_url);
 
 my $APP = 'Help4 Disk Usage';
 my $SCANNER = $ENV{HELP4_DU_SCANNER} || '/usr/local/cpanel/3rdparty/help4-disk-usage/bin/help4-disk-usage-scan';
@@ -82,11 +85,41 @@ if ($q{refresh} && ($request_method ne 'POST' || !valid_nonce($nonce, $q{action_
 my $data = read_json($account_cache);
 $data = undef if $data && (($data->{user} || '') ne $user);
 
+if ($request_method eq 'GET' && $q{open}) {
+    my ($path, $directory);
+    if ($q{open} eq 'home') {
+        ($path, $directory) = ('.', 1);
+    } elsif ($data && $q{open} =~ /\A(?:large_files|stale_large_files|size_hotspots|inode_hotspots|tree_size_hotspots|tree_inode_hotspots)\z/
+        && defined($q{row}) && $q{row} =~ /\A\d{1,2}\z/ && ref($data->{$q{open}}) eq 'ARRAY') {
+        my $row = $data->{$q{open}}[$q{row}];
+        if (ref($row) eq 'HASH') {
+            $path = $row->{relative_path};
+            $directory = $q{open} =~ /hotspots\z/ ? 1 : 0;
+        }
+    }
+    my $url = defined($path) ? filemanager_url($home, $path, $directory) : '';
+    if ($url) {
+        print "Status: 303 See Other\r\nLocation: $url\r\nCache-Control: no-store, max-age=0\r\n\r\n";
+        end_liveapi();
+        exit 0;
+    }
+    $notice = 'File Manager location unavailable: the entry was removed, changed, or is outside your account home. Refresh the report before proceeding.';
+}
+if ($request_method eq 'GET' && $q{export} && $q{export} =~ /\A(?:csv|json)\z/ && $data) {
+    my $type = $q{export} eq 'json' ? 'application/json' : 'text/csv';
+    print "Cache-Control: no-store, max-age=0\r\nContent-Type: $type; charset=utf-8\r\n";
+    print "Content-Disposition: attachment; filename=\"disk-usage-$user.$q{export}\"\r\nX-Content-Type-Options: nosniff\r\n\r\n";
+    print report_export($data, $q{export});
+    end_liveapi();
+    exit 0;
+}
+
 print "Cache-Control: no-store, max-age=0\r\n";
 print "Pragma: no-cache\r\n";
 print "Content-Type: text/html; charset=utf-8\r\n\r\n";
 print $cpanel->header($config->{display_name} || $APP);
 print qq{<link rel="stylesheet" href="help4-disk-usage.css">\n};
+print qq{<script src="help4-disk-usage.js" defer></script>\n};
 print page($data, $notice, $user, $nonce);
 print $cpanel->footer();
 end_liveapi();
@@ -145,7 +178,8 @@ sub end_liveapi {
 sub page {
     my ($a, $notice, $user, $nonce) = @_;
     my $notice_html = $notice ? '<div class="notice">' . h($notice) . '</div>' : '';
-    my $summary = $a ? summary($a) : '<div class="empty">No account scan cache exists yet.</div>';
+    my $summary = $a ? report_html($a, filemanager => 1) : '<div class="empty">No account scan cache exists yet.</div>';
+    my $exports = $a ? '<a class="button secondary" href="index.live.pl?export=csv">Download CSV</a> <a class="button secondary" href="index.live.pl?export=json">Download JSON</a>' : '';
     my $display_name = h($config->{display_name} || $APP);
     return <<"HTML";
   <div class="h4du-page wrap">
@@ -154,6 +188,8 @@ sub page {
         <p class="muted">Account view for @{[h($user || 'unknown')]}. Paths are shown relative to your home directory.</p>
       </div>
       <div class="actions">
+        <a class="button secondary" href="index.live.pl?open=home" target="_blank" rel="noopener"><i class="fa fa-folder-open" aria-hidden="true"></i> File Manager</a>
+        $exports
         <form method="post" action="index.live.pl" class="inline-form" autocomplete="off">
           <input type="hidden" name="refresh" value="1">
           <input type="hidden" name="action_nonce" value="@{[h($nonce)]}">
@@ -161,6 +197,7 @@ sub page {
         </form>
       </div>
     </header>
+    <p class="muted">Refresh policy: @{[$limits->{cpanel_refreshes_per_hour}]} per hour; @{[$limits->{cpanel_min_interval_seconds}]} seconds between attempts; @{[$limits->{cpanel_scan_max_seconds}]} second scan budget.</p>
     $notice_html
     $summary
     @{[credit_html($config)]}

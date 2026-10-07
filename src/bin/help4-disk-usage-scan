@@ -9,7 +9,7 @@ use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use Sys::Hostname qw(hostname);
 
-our $VERSION = '0.3.9';
+our $VERSION = '1.0.0';
 
 my %opt = (
     scope          => 'all',
@@ -275,7 +275,7 @@ sub scan_account {
     my $large_bytes = int($opt_ref->{large_mb}) * 1024 * 1024;
     my $stale_before = time - int($opt_ref->{stale_days}) * 86400;
     my (%dir_files, %dir_bytes, %hotspots);
-    my (@large_files, @stale_large);
+    my (@large_files, @stale_large, @tree_sizes, @tree_inodes);
     my ($total_bytes, $inodes, $errors, $truncated) = (0, 0, 0, 0);
     my ($directories, $limit_reason) = (0, '');
     my $retained_path_bytes = 0;
@@ -294,6 +294,7 @@ sub scan_account {
         my $walk;
         $walk = sub {
             my ($dir_fh, $rel_dir, $depth) = @_;
+            my ($before_bytes, $before_inodes) = ($total_bytes, $inodes);
             chdir($dir_fh) or die "Unable to enter anchored directory\n";
             opendir(my $dh, '.') or die "Unable to read anchored directory\n";
             while (defined(my $name = readdir($dh))) {
@@ -350,6 +351,11 @@ sub scan_account {
                     retain_top(\@stale_large, item('', $rel, $size, $mtime), $opt_ref->{top}) if $mtime && $mtime < $stale_before;
                 }
             }
+            if ($rel_dir ne '.') {
+                my $tree = { relative_path => $rel_dir, bytes => $total_bytes - $before_bytes, files => $inodes - $before_inodes + 1 };
+                retain_top(\@tree_sizes, $tree, $opt_ref->{top}, 'bytes');
+                retain_top(\@tree_inodes, $tree, $opt_ref->{top}, 'files');
+            }
         };
         my $ok = eval { $walk->($home_fh, '.', 0); 1 };
         my $failure = $@;
@@ -397,6 +403,9 @@ sub scan_account {
         stale_large_files   => \@stale_large,
         inode_hotspots      => \@inode_dirs,
         size_hotspots       => \@size_dirs,
+        tree_size_hotspots  => [top_items(\@tree_sizes, $opt_ref->{top}, 'bytes')],
+        tree_inode_hotspots => [top_items(\@tree_inodes, $opt_ref->{top}, 'files')],
+        report_policy       => { top => $opt_ref->{top}, large_mb => $opt_ref->{large_mb}, stale_days => $opt_ref->{stale_days} },
         category_hotspots   => \@hotspot_rows,
         growth              => $growth,
         remediation_hints   => remediation_hints($severity, \@hotspot_rows, \@stale_large, $growth, $truncated),
@@ -484,9 +493,9 @@ sub top_items {
 }
 
 sub retain_top {
-    my ($rows, $item, $limit) = @_;
+    my ($rows, $item, $limit, $key) = @_;
     push @$rows, $item;
-    @$rows = top_items($rows, $limit, 'bytes') if @$rows > 2 * $limit;
+    @$rows = top_items($rows, $limit, $key || 'bytes') if @$rows > 2 * $limit;
 }
 
 sub top_dirs {

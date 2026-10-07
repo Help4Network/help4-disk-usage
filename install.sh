@@ -11,7 +11,7 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
 BACKUP_DIR=""
 VERSION="$(sed -n "s/^our \\\$VERSION = '\\([^']*\\)';/\\1/p" "$ROOT_DIR/src/bin/help4-disk-usage-scan" | head -n 1)"
-RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz}"
+RELEASE_URL="${HELP4_DU_RELEASE_URL:-https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.0.tar.gz}"
 UPDATE_MANIFEST_URL="${HELP4_DU_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json}"
 
 APP_DIR="/usr/local/cpanel/3rdparty/help4-disk-usage"
@@ -50,7 +50,7 @@ if [ -n "$BACKUP_ROOT" ]; then
   fi
 fi
 
-install -d -m 0755 "$APP_DIR/bin" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$WHM_ICON_DIR" "$CPANEL_DIR" /var/cpanel/apps
+install -d -m 0755 "$APP_DIR/bin" "$APP_DIR/lib/Help4/DiskUsage" "$WHM_CGI_DIR" "$WHM_TEMPLATE_DIR" "$WHM_STATIC_DIR" "$WHM_ICON_DIR" "$CPANEL_DIR" /var/cpanel/apps
 install -d -m 0755 "$CACHE_DIR"
 install -d -m 0750 "$CACHE_DIR/accounts"
 install -d -m 0755 "$LOCK_DIR"
@@ -66,7 +66,7 @@ if [ ! -e "$CONFIG_FILE" ]; then
    "cpanel_scan_max_seconds" : 60,
    "display_name" : "Disk Usage Audit",
    "package_overrides" : {},
-   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v0.3.9.tar.gz",
+   "release_url" : "https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.0.tar.gz",
    "scan_lock_dir" : "/var/cpanel/help4-disk-usage/locks",
    "update_manifest_url" : "https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json",
    "whm_scan_max_seconds" : 90
@@ -97,13 +97,16 @@ chmod 0644 "$CONFIG_FILE"
 
 install -m 0755 "$ROOT_DIR/src/bin/help4-disk-usage-scan" "$APP_DIR/bin/help4-disk-usage-scan"
 install -m 0755 "$ROOT_DIR/src/bin/help4-disk-usage-update" "$APP_DIR/bin/help4-disk-usage-update"
+install -m 0644 "$ROOT_DIR/src/lib/Help4/DiskUsage/Report.pm" "$APP_DIR/lib/Help4/DiskUsage/Report.pm"
 install -m 0755 "$ROOT_DIR/src/whm/index.cgi" "$WHM_CGI_DIR/index.cgi"
 install -m 0644 "$ROOT_DIR/src/whm/templates/index.tmpl" "$WHM_TEMPLATE_DIR/index.tmpl"
 install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage-whm.css" "$WHM_STATIC_DIR/help4-disk-usage-whm.css"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.js" "$WHM_STATIC_DIR/help4-disk-usage.js"
 install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.png" "$WHM_ICON_DIR/help4-disk-usage.png"
 
 install -m 0755 "$ROOT_DIR/src/cpanel/index.live.pl" "$CPANEL_DIR/index.live.pl"
 install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage-whm.css" "$CPANEL_DIR/help4-disk-usage.css"
+install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.js" "$CPANEL_DIR/help4-disk-usage.js"
 install -m 0644 "$ROOT_DIR/src/static/help4-disk-usage.svg" "$CPANEL_DIR/help4-disk-usage.svg"
 
 install -m 0644 "$ROOT_DIR/packaging/help4_disk_usage.conf" /var/cpanel/apps/help4_disk_usage.conf
