@@ -527,11 +527,20 @@ The original validation used cPanel 136.0 build 24 and checked:
 - Bounded sample scans without timeout.
 - Cron installed.
 
-Current verification on **2026-10-06** covers release **0.3.9** on Genie, dolce01, gohoster02, and the WHMCS addon. All three cPanel nodes remained at **11.138.0.12**, with unchanged boot IDs and no automatic snapshots. Authenticated Genie browser tests confirmed native WHM/Jupiter navigation, one refresh POST, two read-only reloads, and mobile layout without overflow or console errors. The large account scan hit the 500,000-entry cap after 46 seconds with zero scan errors; it correctly showed incomplete coverage instead of implying a full quota result.
+Earlier verification on **2026-10-06** covered release **0.3.9** on Genie, dolce01, gohoster02, and the WHMCS addon. All three cPanel nodes remained at **11.138.0.12**, with unchanged boot IDs and no automatic snapshots. Authenticated Genie browser tests confirmed native WHM/Jupiter navigation, one refresh POST, two read-only reloads, and mobile layout without overflow or console errors. The large account scan hit the 500,000-entry cap after 46 seconds with zero scan errors; it correctly showed incomplete coverage instead of implying a full quota result.
 
 The deployed WHMCS PHP runtime rendered its five admin views and health widget; real-database checks covered seven clients and nine visible reports. Invalid CSRF input was rejected without a remote action, and anonymous client HTTP access required login. Fleet Check/Sync passed in two-account smoke batches; their health rows remain **partial**, not proof of complete account coverage. See [the dated assessment](docs/shared-hosting-security-2026-10.md) for tested boundaries and remaining risks.
 
 The live rollout used Genie as the first validation target, followed by gohoster02 and dolce01 after the Genie and WHMCS review gates passed. Operators should still use the immutable-release, staged-limit, and verification gates in [`docs/rollout.md`](docs/rollout.md) for every environment.
+
+### 1.0.0 Verification: 2026-10-07
+
+- Genie authenticated cPanel browser checks proved both file-to-containing-directory and directory-to-itself File Manager navigation, preserving the native session and report tab. JSON export, recursive ranks, live search, one refresh POST, two read-only reloads and 390-pixel mobile layout passed with no relevant console or LiveAPI errors. Authenticated WHM root drill-down and return navigation passed in the native shell.
+- Genie, dolce01 and gohoster02 now run 1.0.0 with consistent completed-install readback. Checksummed archives, bundled-Perl race/lock/cap/tree regressions, private cache/lock permissions, native registrations and bounded sample scans passed. cPanel remained 11.138.0.12 and boot IDs did not change; no snapshots were created. Positive reseller ownership rendering was checked on dolce01 through the trusted CLI controller, not a reseller browser session. The other nodes have no reseller owner to exercise.
+- The production WHMCS addon runs 1.0.0. Its additive report migration passed twice; five admin views, account detail, the health widget and the native Smarty customer template rendered. Real-database checks covered seven clients and eleven currently entitled rows, with zero anonymous rows. Pinned Check/Sync passed for all three nodes; six detailed reports were stored. Health remains partial because validation uses two-account/15-second smoke batches, not exhaustive fleet scans. Authenticated WHMCS admin/client browser-role matrices remain outside this verification.
+- Local tests plus CI/release gates cover file navigation, escaping/formula-safe exports, recursive ranks, refresh lifecycle, WHMCS entitlement, update integrity and synthetic desktop/mobile interactions. Public screenshots are dummy-data illustrations, never raw authenticated captures. This is functional/security-regression evidence, not independent certification or a comparative performance benchmark.
+
+The operating sequence and remaining limits are in [`docs/file-workflows.md`](docs/file-workflows.md).
 
 ## Marketing Notes
 
