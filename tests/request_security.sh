@@ -65,6 +65,17 @@ JSON
 whm_detail="$(env "${whm_env[@]}" QUERY_STRING='view_account=customer01&search=customer&sort=inodes' perl "$ROOT_DIR/src/whm/index.cgi")"
 grep -q 'name="view_account" value="customer01"' <<<"$whm_detail"
 grep -q 'href="index.cgi?search=customer&amp;sort=inodes"' <<<"$whm_detail"
+cat > "$TMP_DIR/cache/accounts/nobody.json" <<'JSON'
+{"user":"nobody","home":"/","large_files":[{"relative_path":"legacy-system-scan"}]}
+JSON
+cat > "$TMP_DIR/cache/accounts/systemhome.json" <<'JSON'
+{"user":"systemhome","home":"/","large_files":[{"relative_path":"legacy-system-scan"}]}
+JSON
+whm_system="$(env "${whm_env[@]}" QUERY_STRING=view_account=nobody perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q '^Status: 404 Not Found' <<<"$whm_system"
+whm_system="$(env "${whm_env[@]}" QUERY_STRING=view_account=systemhome perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q '^Status: 404 Not Found' <<<"$whm_system"
+! grep -q 'legacy-system-scan' <<<"$whm_system"
 
 whm_denied="$(env "${whm_env[@]}" REMOTE_USER=unrelated QUERY_STRING=view_account=customer01 perl "$ROOT_DIR/src/whm/index.cgi")"
 grep -q '^Status: 404 Not Found' <<<"$whm_denied"

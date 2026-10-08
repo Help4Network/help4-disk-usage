@@ -8,6 +8,7 @@
 - Prevent duplicate action submissions, announce busy state and restore controls after browser Back/Forward cache navigation.
 - Add an accessible clear-path-search control and make report section links land on headings and controls instead of the table body.
 - Extend native-shell, refresh, scope and desktop/mobile interaction regressions. Preserve existing scan limits, lock, cache boundaries and root-only updater policy.
+- Exclude reserved system identities and filesystem-root homes from cPanel account discovery and hide legacy system-home cache entries in WHM's account dashboard.
 
 ## 1.0.0
 

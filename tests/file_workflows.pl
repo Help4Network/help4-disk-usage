@@ -77,7 +77,8 @@ if ($user !~ /\A(?:root|cpanel|nobody)\z/) {
     check(cpanel('export=json') !~ /Content-Disposition/, 'foreign cache allowed export');
 }
 make_path("$tmp/whm/accounts");
-for my $name ($user, 'foreignaccount') {
+my $whm_user = $user eq 'root' ? 'customer01' : $user;
+for my $name ($whm_user, 'foreignaccount') {
     open $fh, '>', "$tmp/whm/accounts/$name.json" or die $!;
     print {$fh} encode_json({%$data, user => $name}); close $fh;
 }
@@ -90,7 +91,7 @@ sub whm {
     check($? == 0, 'WHM controller failed');
     return $response;
 }
-check(whm("view_account=$user") =~ /data-search/, 'owned WHM detail missing');
+check(whm("view_account=$whm_user") =~ /data-search/, 'owned WHM detail missing');
 if ($user ne 'root') {
     check(whm('view_account=foreignaccount&export=json') =~ /Status: 404/, 'foreign WHM export bypassed ownership');
     check(whm('view_account=foreignaccount') !~ /OTHER_PRIVATE_ACCOUNT|data-search/, 'foreign WHM detail exposed report');

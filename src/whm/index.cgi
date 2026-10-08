@@ -78,7 +78,7 @@ if ($has_action && !$valid_action) {
             my $latest = read_json_file(File::Spec->catfile($CACHE_DIR, 'latest.json')) || {};
             my $processed = int($latest->{account_count} || 0);
             my $remaining = int($latest->{accounts_remaining} || 0);
-            $notice = $remaining > 0
+            $notice = $q{account} ? 'Account scan refreshed. Review coverage and timestamps below.' : $remaining > 0
                 ? "Bounded scan processed $processed account(s); $remaining remain and will rotate forward on the next scan."
                 : 'Scan refreshed. Review the timestamps below.';
         } else {
@@ -375,12 +375,14 @@ sub read_account_caches {
     while (defined(my $file = readdir $dh)) {
         next unless $file =~ /\A[A-Za-z0-9_.-]+\.json\z/;
         (my $cache_user = $file) =~ s/\.json\z//;
+        next if $cache_user =~ /\A(?:root|cpanel|nobody)\z/;
         my $path = File::Spec->catfile($dir, $file);
         open my $fh, '<', $path or next;
         local $/;
         my $data = eval { decode_json(<$fh>) };
         next unless $data && ref $data eq 'HASH';
         next unless ($data->{user} || '') eq $cache_user;
+        next if ($data->{home} || '') =~ m{\A/+\z};
         push @out, $data if $data && ref $data eq 'HASH';
     }
     return @out;

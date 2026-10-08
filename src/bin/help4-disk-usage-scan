@@ -209,12 +209,13 @@ sub discover_accounts {
     if (-d '/var/cpanel/users') {
         opendir my $dh, '/var/cpanel/users' or die "Cannot open /var/cpanel/users: $!\n";
         while (defined(my $user = readdir $dh)) {
-            next if $user =~ /^\./;
+            next unless $user =~ /\A[A-Za-z0-9_.-]+\z/;
+            next if $user =~ /\A(?:root|cpanel|nobody)\z/;
             my $file = "/var/cpanel/users/$user";
             next unless -f $file;
             my %meta = read_cpanel_user_file($file);
             my $home = $meta{HOMEDIR} || passwd_home($user);
-            next unless $home && -d $home;
+            next unless $home && -d $home && !same_dir($home, '/');
             push @accounts, { user => $user, owner => ($meta{OWNER} || 'root'), home => $home };
         }
         return sort { $a->{user} cmp $b->{user} } @accounts;
