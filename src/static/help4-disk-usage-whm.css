@@ -109,7 +109,7 @@
 .h4du-page .search-field { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .h4du-page .search-field input { min-width: 0; }
 .h4du-page .icon-button { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; }
-.h4du-page .report-tools label:first-child { flex: 1 1 220px; }
+.h4du-page .report-tools .path-search { display: grid; gap: 4px; font-size: 12px; min-width: 0; flex: 1 1 220px; }
 .h4du-page .report-tools input,
 .h4du-page .report-tools select { min-height: 36px; border: 1px solid #b9c8d8; border-radius: 4px; background: #fff; padding: 6px 8px; font: inherit; width: 100%; }
 .h4du-page .file-report { overflow: visible; scroll-margin-top: 80px; }

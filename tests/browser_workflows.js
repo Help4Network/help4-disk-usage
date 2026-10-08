@@ -25,6 +25,7 @@ const assert = (ok, reason) => { if (!ok) throw new Error(reason); };
     await page.addScriptTag({path:repo+'/src/static/help4-disk-usage.js'});
     assert(await page.getByRole('heading', {name:'Disk Usage Audit',exact:true}).isVisible(), 'page identity or blank page failure');
     const section = page.locator('[data-report="large_files"]');
+    assert(await section.getByRole('searchbox',{name:'Search paths',exact:true}).isVisible(), 'search label includes unrelated control');
     assert(await section.locator('tr[data-path]:visible').count() === 25, 'default page size');
     await section.locator('[data-next]').click();
     assert(await section.locator('tr[data-path]:visible').count() === 10, 'second page size');
