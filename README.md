@@ -542,6 +542,14 @@ The live rollout used Genie as the first validation target, followed by gohoster
 
 The operating sequence and remaining limits are in [`docs/file-workflows.md`](docs/file-workflows.md).
 
+### 1.0.1 Verification: 2026-10-08
+
+- Genie, dolce01 and gohoster02 run the exact checksummed 1.0.1 tagged source, with matching scanner/completed-install versions and a current public update channel. Existing policy settings and backup counts were preserved. cPanel was already **11.138.0.13** at preflight and stayed there; boot IDs did not change. Recovery packages came from verified 1.0.0 Git releases, not new filesystem snapshots.
+- Authenticated Genie checks confirm Jupiter's Files launch, native header/sidebar/footer and one HTML document. File rows open their containing directory and tree rows open themselves in native File Manager, with the same authenticated session and a separate report tab. Clear-path-search restores the input focus. The final account refresh completed in **27 seconds**, with **zero scan errors**, and two reloads preserved its timestamp without another scan. The **500,000-entry cap** correctly remains visible as incomplete coverage, not a full quota result.
+- Authenticated WHM root checks confirm the normal left menu and right-hand content. Account detail survives a rescan, and returning to the list retains its search/sort. The bounded 90-second account rescan correctly reported partial timeout coverage with zero scan errors. Legacy reserved-system/root-home reports are excluded. All three nodes passed native controller, account-cache, shared-lock, tenant-write-denial and bundled-Perl regressions. Positive reseller ownership rendering was checked on dolce01 through the trusted controller, not a reseller browser session.
+- The installed WHMCS addon is 1.0.1. Five native admin views, account detail and the health widget rendered; real-database checks covered seven clients and eleven currently entitled rows with zero anonymous rows. Host-key-pinned Check/Sync passed for all three nodes. Their health is **partial** because this validation uses two-account/15-second smoke batches; it does not establish exhaustive fleet health or a browser-role matrix.
+- Local and GitHub CI/release tests passed, including isolated desktop/390-pixel-mobile interactions and request/security boundaries. This turn's authenticated Chrome viewport override did not take effect, so native mobile revalidation is not claimed. One non-fatal `shadowRoot` exception from Jupiter's own deferred master script appeared during native navigation; no plugin parse/LiveAPI error was observed, and cPanel core scripts were not modified. These are bounded functional/regression checks, not independent security certification or a market-speed comparison.
+
 ## Marketing Notes
 
 Positioning:

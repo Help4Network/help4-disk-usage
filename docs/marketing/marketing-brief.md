@@ -1,8 +1,10 @@
 # Help4 Disk Usage Marketing Brief
 
-## 1.0.0 File Workflows
+## 1.0.1 File Workflows
 
 Customers can click an offender path or File Manager action to open its native cPanel location in a separate tab, then use native download, preview, move, permissions and trash controls. The plugin itself never deletes files or reads their contents. Search/sort/paging/copy/export operate on bounded retained metadata, not a complete filesystem index. Recursive tree rankings are separate from direct-file rankings; overlapping trees cannot be summed. WHM has scoped account drill-downs; WHMCS has detailed reports and current-service links, not embedded SSO credentials. Use `docs/file-workflows.md` for the tutorial sequence and safety notes. Do not describe partial coverage as complete or promise automatic cleanup.
+
+Version 1.0.1 keeps the normal WHM navigation and Jupiter header/sidebar/footer. WHM account filters and sort survive drill-down and rescans; POST actions redirect to read-only pages, duplicate submissions are blocked, and browser Back/Forward restores controls. Report section links land on headings and controls, and each path filter has an accessible clear action. Do not suggest adding a replacement frame or suppressing the native navigation.
 
 ## One-Line Positioning
 
@@ -80,4 +82,4 @@ Genie is the canary target; dolce01 and gohoster02 are existing rollout targets.
 
 ## Claims And Privacy
 
-Use dummy accounts/domains for public screenshots, never live customer identifiers. The October review is an automated source audit plus regression coverage, not cPanel certification or independent penetration testing. Do not claim perfect security, hard tenant quotas, recursive directory totals, or market-leading speed. Safety-limited reports are lower-bound observations; growth requires two complete scans. See `docs/shared-hosting-security-2026-10.md` for details.
+Use dummy accounts/domains for public screenshots, never live customer identifiers. The October review is an automated source audit plus regression coverage, not cPanel certification or independent penetration testing. Do not claim perfect security, hard tenant quotas, complete filesystem or quota totals, or market-leading speed. Recursive tree rankings are bounded observations, not full quota accounting. Safety-limited reports are lower-bound observations; growth requires two complete scans. See `docs/shared-hosting-security-2026-10.md` for details.

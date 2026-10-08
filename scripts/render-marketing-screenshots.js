@@ -15,6 +15,7 @@ const h4Icon = `data:image/svg+xml;base64,${fs.readFileSync(path.join(root, 'src
 function cpanelShell(title, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
     *{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#151923;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .h4du-page [data-clear-search] .fa-times::before{content:"\\00d7"}
     .cp-header{height:58px;background:#20252b;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px}.cp-brand{font-size:21px;font-weight:700}.cp-account{color:#dfe4ea;font-size:13px}
     .cp-layout{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:942px}.cp-nav{background:#fff;border-right:1px solid #dfe4ea;padding:22px 16px}.cp-nav-title{margin:0 8px 8px;color:#596577;font-size:12px;font-weight:700;text-transform:uppercase}.cp-nav-title.secondary{margin-top:20px}.cp-link{display:flex;align-items:center;gap:8px;min-height:39px;padding:9px 11px;color:#2c3543;text-decoration:none}.cp-link img{width:20px;height:20px;flex:0 0 20px}.cp-link.selected{background:#eaf2ff;border-left:3px solid #256fda;padding-left:8px;color:#174f9d;font-weight:700}.cp-content{min-width:0;padding:26px 24px;background:#f8f9fb}.cp-page-title{max-width:1240px;margin:0 auto 8px;padding:0 16px;font-size:26px;line-height:1.2}
     @media(max-width:700px){.cp-layout{display:block}.cp-nav{display:none}.cp-content{padding:18px 4px}.cp-header{padding:0 16px}.cp-page-title{font-size:24px}}
