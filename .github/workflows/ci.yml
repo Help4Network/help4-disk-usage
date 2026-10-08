@@ -51,7 +51,8 @@ jobs:
           php tests/whmcs_tenant_isolation.php
           ./tests/security_boundaries.sh
           ./tests/backup_policy.sh
-          ./tests/branding_update_contract.sh
+          # The channel manifest follows the immutable tag archive, not candidate code.
+          HELP4_DU_PREPUBLICATION_MANIFEST=1 ./tests/branding_update_contract.sh
           ./tests/request_security.sh
           ./tests/whmcs_package.sh
           php tests/whmcs_ssh_security.php

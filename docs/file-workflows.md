@@ -14,6 +14,10 @@ File Manager availability still depends on the host's cPanel feature list and ac
 
 ## Provider: WHM
 
+From 1.0.1, rescanning a detailed account keeps that account open. Returning to the account list preserves the username/owner search and sort. Scan, settings and update submissions redirect to a clean GET, so reloading does not replay the operation. Double-clicking an action is blocked while it runs; Back/Forward restores the controls. A missing or inaccessible report keeps WHM's navigation and a generic unavailable message.
+
+WHM uses `master_templates/master.tmpl` with the normal header and left navigation; Jupiter uses `Cpanel::LiveAPI` header/footer/end. The plugin does not replace the host shell, add a cross-origin iframe, or navigate `window.top`. Relative same-tab report links stay in the current native browsing context. Only customer File Manager links deliberately open a new authenticated tab, preserving the report. Report section links land on headings and controls; path filters include a clear button.
+
 Filter the account list by username/owner or sort by status, disk, inodes, or account. Click an account for its detailed report, retained-entry controls and downloads. A reseller's current ownership allowlist is applied before selecting detail or export data; inaccessible reports return a generic not-found response. Native WHM navigation remains present. WHM does not silently mint customer sessions or expose another account's File Manager URL.
 
 ## Support And Customers: WHMCS

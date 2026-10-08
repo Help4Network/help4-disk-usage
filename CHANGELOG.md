@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+- Redirect WHM POST actions to a clean relative GET, preserving account drill-down and account-list search/sort without replaying scans, settings changes or updates on reload.
+- Keep generic unavailable-account reports inside WHM's native navigation without disclosing unowned account data.
+- Load shared interaction code through the WHM master template on both account lists and detail pages; keep Jupiter's LiveAPI lifecycle unchanged.
+- Prevent duplicate action submissions, announce busy state and restore controls after browser Back/Forward cache navigation.
+- Add an accessible clear-path-search control and make report section links land on headings and controls instead of the table body.
+- Extend native-shell, refresh, scope and desktop/mobile interaction regressions. Preserve existing scan limits, lock, cache boundaries and root-only updater policy.
+
 ## 1.0.0
 
 - Add account-safe cPanel File Manager jumps from large/stale files and directory rankings. Files open their containing directory; directories open themselves in a new tab, preserving the report and native session. Missing, invalid, or cross-home symlink locations fail closed.

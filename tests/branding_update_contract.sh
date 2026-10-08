@@ -29,6 +29,11 @@ grep -q 'Help4 Network' <<<"$whm_html"
 grep -q 'Update manifest URL' <<<"$whm_html"
 grep -q "WRAPPER 'master_templates/master.tmpl'" "$ROOT_DIR/src/whm/templates/index.tmpl"
 grep -q 'help4-disk-usage-whm.css' "$ROOT_DIR/src/whm/templates/index.tmpl"
+grep -q "scripts = \[ '/help4-disk-usage/help4-disk-usage.js' \]" "$ROOT_DIR/src/whm/templates/index.tmpl"
+if grep -Eq 'window\.(top|parent)\.|target=["\x27]_top|<iframe' "$ROOT_DIR/src/static/help4-disk-usage.js" "$ROOT_DIR/src/whm/index.cgi" "$ROOT_DIR/src/cpanel/index.live.pl"; then
+  echo "Plugin attempts to replace or escape its native browsing context." >&2
+  exit 1
+fi
 if grep -Eq '^[[:space:]]*(body|html|h1|h2|table|th|td)[[:space:],{]' "$ROOT_DIR/src/static/help4-disk-usage-whm.css"; then
   echo "Shared stylesheet contains an unscoped global selector." >&2
   exit 1

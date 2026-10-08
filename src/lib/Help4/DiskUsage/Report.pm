@@ -97,7 +97,8 @@ sub tools {
     $sort =~ s/value="files"/value="files"$selected/ if $selected;
     my $bytes_selected = $default eq 'bytes' ? ' selected' : '';
     return '<div class="report-tools">'
-        . '<label>Search paths<input type="search" data-search aria-controls="' . $id . '" placeholder="Filter paths"></label>'
+        . '<label>Search paths<span class="search-field"><input type="search" data-search aria-controls="' . $id . '" placeholder="Filter paths">'
+        . '<button type="button" class="button secondary icon-button" data-clear-search aria-label="Clear path search" title="Clear path search"><i class="fa fa-times" aria-hidden="true"></i></button></span></label>'
         . '<label>Sort by<select data-sort><option value="bytes"' . $bytes_selected . '>Size</option>' . $sort . '<option value="path">Path</option></select></label>'
         . '<label>Order<select data-order><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>'
         . '<label>Rows<select data-limit><option>25</option><option>50</option><option>100</option></select></label>'
@@ -146,8 +147,8 @@ sub report_html {
         my $id = 'report-' . $key;
         my $tree = $key =~ /\Atree_/ ? 1 : 0;
         next if $tree && !exists($a->{$key});
-        $out .= '<section class="file-report" data-report="' . $key . '"><h2>' . $title . '</h2>' . tools($id, $key =~ /inode/ ? 'files' : 'bytes', $directory)
-            . '<p class="result-count muted" aria-live="polite"></p><div class="table-scroll"><table id="' . $id . '"><thead><tr><th>Path</th><th>Bytes</th><th>' . ($tree ? 'Subtree entries' : $directory ? 'Direct files' : 'Modified (UTC)') . '</th><th>Actions</th></tr></thead><tbody>';
+        $out .= '<section id="' . $id . '" class="file-report" data-report="' . $key . '"><h2>' . $title . '</h2>' . tools($id . '-table', $key =~ /inode/ ? 'files' : 'bytes', $directory)
+            . '<p class="result-count muted" aria-live="polite"></p><div class="table-scroll"><table id="' . $id . '-table"><thead><tr><th>Path</th><th>Bytes</th><th>' . ($tree ? 'Subtree entries' : $directory ? 'Direct files' : 'Modified (UTC)') . '</th><th>Actions</th></tr></thead><tbody>';
         my $i = -1;
         for my $r (@{rows($a, $key)}) {
             $i++;

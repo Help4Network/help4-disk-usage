@@ -2,7 +2,7 @@
 
 Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-support reporting.
 
-**1.0.0** adds actionable account drill-downs, recursive directory-tree rankings, safe native File Manager navigation, report search/sort, copying, and exports. It does not introduce a privileged deletion or file-content API.
+**1.0.1** keeps WHM actions and unavailable reports inside native navigation, preserves account filters and drill-down after rescans, prevents repeat actions on reload, and improves path search and section links. It retains the 1.0.0 file workflows: recursive directory-tree rankings, safe native File Manager navigation, search/sort, copying, and exports. It does not introduce a privileged deletion or file-content API.
 
 Help4 Disk Usage turns the original Help4 Network [`find_large_files_and_inodes`](https://github.com/Help4Network/find_large_files_and_inodes) scanner into a public, installable product for hosting providers:
 
@@ -152,8 +152,8 @@ CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smok
 Upload the release tarball to the cPanel server and run:
 
 ```bash
-tar -xzf help4-disk-usage-1.0.0.tar.gz
-cd help4-disk-usage-1.0.0
+tar -xzf help4-disk-usage-1.0.1.tar.gz
+cd help4-disk-usage-1.0.1
 sudo ./install.sh
 ```
 

@@ -2,7 +2,14 @@
   'use strict';
   function init() {
     document.querySelectorAll('.h4du-page').forEach(function (root) {
-      const status = root.querySelector('.action-status');
+      let status = root.querySelector('.action-status');
+      if (!status) {
+        status = document.createElement('p');
+        status.className = 'action-status muted';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        root.append(status);
+      }
       function announce(message) { if (status) status.textContent = message; }
       root.querySelectorAll('[data-copy]').forEach(function (button) {
         button.addEventListener('click', async function () {
@@ -18,19 +25,42 @@
           }
         });
       });
-      root.querySelectorAll('form').forEach(function (form) {
-        if (!form.querySelector('input[name="refresh"]')) return;
-        form.addEventListener('submit', function () {
-          root.querySelectorAll('input[name="refresh"]').forEach(function (input) {
-            input.form.querySelector('button[type="submit"]').disabled = true;
-          });
-          announce('Scan running.');
+      const actionForms = Array.from(root.querySelectorAll('form')).filter(function (form) {
+        return form.method.toLowerCase() === 'post';
+      });
+      const submitButtons = actionForms.flatMap(function (form) {
+        return Array.from(form.querySelectorAll('button[type="submit"]')).map(function (button) {
+          return { button: button, disabled: button.disabled, label: button.textContent };
         });
+      });
+      let submitting = false;
+      actionForms.forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          if (submitting) { event.preventDefault(); return; }
+          submitting = true;
+          root.setAttribute('aria-busy', 'true');
+          submitButtons.forEach(function (item) { item.button.disabled = true; });
+          const scanning = !!form.querySelector('input[name="refresh"]');
+          const button = form.querySelector('button[type="submit"]');
+          if (button) button.textContent = scanning ? 'Scanning...' : 'Working...';
+          announce(scanning ? 'Scan running.' : 'Request running.');
+        });
+      });
+      window.addEventListener('pageshow', function (event) {
+        if (!event.persisted) return;
+        submitting = false;
+        root.removeAttribute('aria-busy');
+        submitButtons.forEach(function (item) {
+          item.button.disabled = item.disabled;
+          item.button.textContent = item.label;
+        });
+        announce('');
       });
       root.querySelectorAll('.file-report').forEach(function (section) {
         const body = section.querySelector('tbody');
         const rows = Array.from(body.querySelectorAll('tr[data-path]'));
         const search = section.querySelector('[data-search]');
+        const clear = section.querySelector('[data-clear-search]');
         const sort = section.querySelector('[data-sort]');
         const order = section.querySelector('[data-order]');
         const limit = section.querySelector('[data-limit]');
@@ -57,9 +87,13 @@
           section.querySelector('.no-results').hidden = filtered.length !== 0;
           section.querySelector('[data-page]').textContent = 'Page ' + (page + 1) + ' of ' + pages;
           previous.disabled = page === 0; next.disabled = page + 1 === pages;
+          if (clear) clear.disabled = search.value.length === 0;
         }
         [search, sort, order, limit].forEach(function (control) {
           control.addEventListener(control === search ? 'input' : 'change', function () { page = 0; render(); });
+        });
+        if (clear) clear.addEventListener('click', function () {
+          search.value = ''; page = 0; render(); search.focus();
         });
         previous.addEventListener('click', function () { page--; render(); });
         next.addEventListener('click', function () { page++; render(); });

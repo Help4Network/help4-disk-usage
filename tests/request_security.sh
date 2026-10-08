@@ -37,12 +37,62 @@ whm_nonce="$(sed -n 's/.*name="action_nonce" value="\([0-9a-f]*\)".*/\1/p' <<<"$
 grep -Eq '^[0-9a-f]{64}$' <<<"$whm_nonce"
 
 whm_get="$(env "${whm_env[@]}" QUERY_STRING=refresh=1 perl "$ROOT_DIR/src/whm/index.cgi")"
-grep -q 'Request rejected' <<<"$whm_get"
+grep -q '^Status: 303 See Other' <<<"$whm_get"
+grep -q '^Location: index.cgi' <<<"$whm_get"
+whm_rejected="$(env "${whm_env[@]}" perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'Request rejected' <<<"$whm_rejected"
 
 whm_body="save_settings=1&action_nonce=$whm_nonce&display_name=Secured+Portal"
 whm_post="$(printf '%s' "$whm_body" | env "${whm_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_body}" perl "$ROOT_DIR/src/whm/index.cgi")"
-grep -q 'Settings saved' <<<"$whm_post"
-grep -q '<h1>Secured Portal</h1>' <<<"$whm_post"
+grep -q '^Status: 303 See Other' <<<"$whm_post"
+perl -e 'die "action result permissions\n" unless ((stat($ARGV[0]))[2] & 0777) == 0600' "$TMP_DIR/cache/nonces/root.notice.json"
+whm_other="$(env "${whm_env[@]}" REMOTE_USER=unrelated perl "$ROOT_DIR/src/whm/index.cgi")"
+! grep -q 'Settings saved' <<<"$whm_other"
+test -f "$TMP_DIR/cache/nonces/root.notice.json"
+if grep -q '<html' <<<"$whm_post"; then
+  echo "WHM action nested its shell in a redirect." >&2
+  exit 1
+fi
+whm_saved="$(env "${whm_env[@]}" perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'Settings saved' <<<"$whm_saved"
+grep -q '<h1>Secured Portal</h1>' <<<"$whm_saved"
+whm_reload="$(env "${whm_env[@]}" perl "$ROOT_DIR/src/whm/index.cgi")"
+! grep -q 'Settings saved' <<<"$whm_reload"
+
+cat > "$TMP_DIR/cache/accounts/customer01.json" <<'JSON'
+{"user":"customer01","owner":"root","scan_complete":true,"large_files":[{"relative_path":"customer-secret.log","bytes":2000}]}
+JSON
+whm_detail="$(env "${whm_env[@]}" QUERY_STRING='view_account=customer01&search=customer&sort=inodes' perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'name="view_account" value="customer01"' <<<"$whm_detail"
+grep -q 'href="index.cgi?search=customer&amp;sort=inodes"' <<<"$whm_detail"
+
+whm_denied="$(env "${whm_env[@]}" REMOTE_USER=unrelated QUERY_STRING=view_account=customer01 perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q '^Status: 404 Not Found' <<<"$whm_denied"
+grep -q 'id="whm-left-navigation"' <<<"$whm_denied"
+grep -q 'Account report unavailable' <<<"$whm_denied"
+! grep -q 'customer-secret' <<<"$whm_denied"
+
+whm_multiple="refresh=1&save_settings=1&action_nonce=$whm_nonce&display_name=Changed"
+printf '%s' "$whm_multiple" | env "${whm_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_multiple}" perl "$ROOT_DIR/src/whm/index.cgi" >/dev/null
+whm_multiple_get="$(env "${whm_env[@]}" perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'Request rejected' <<<"$whm_multiple_get"
+grep -q '<h1>Secured Portal</h1>' <<<"$whm_multiple_get"
+
+whm_unsafe_nav="refresh=1&action_nonce=invalid&search=x%0D%0ALocation%3A+https%3A%2F%2Fevil.example&sort=bogus&view_account=customer01&export=json&return_to=https%3A%2F%2Fevil.example"
+whm_encoded="$(printf '%s' "$whm_unsafe_nav" | env "${whm_env[@]}" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_unsafe_nav}" perl "$ROOT_DIR/src/whm/index.cgi")"
+test "$(grep -c '^Location:' <<<"$whm_encoded")" = "1"
+grep -q '^Location: index.cgi?search=x%0D%0ALocation%3A%20https%3A%2F%2Fevil.example&view_account=customer01' <<<"$whm_encoded"
+! grep -q 'export=\|return_to=\|sort=bogus' <<<"$whm_encoded"
+
+reseller_body='save_settings=1&action_nonce=invalid'
+printf '%s' "$reseller_body" | env "${whm_env[@]}" REMOTE_USER=unrelated REQUEST_METHOD=POST CONTENT_LENGTH="${#reseller_body}" perl "$ROOT_DIR/src/whm/index.cgi" >/dev/null
+reseller_html="$(env "${whm_env[@]}" REMOTE_USER=unrelated perl "$ROOT_DIR/src/whm/index.cgi")"
+reseller_nonce="$(sed -n 's/.*name="action_nonce" value="\([0-9a-f]*\)".*/\1/p' <<<"$reseller_html" | head -n 1)"
+reseller_body="save_settings=1&action_nonce=$reseller_nonce&display_name=Unauthorized"
+printf '%s' "$reseller_body" | env "${whm_env[@]}" REMOTE_USER=unrelated REQUEST_METHOD=POST CONTENT_LENGTH="${#reseller_body}" perl "$ROOT_DIR/src/whm/index.cgi" >/dev/null
+reseller_denied="$(env "${whm_env[@]}" REMOTE_USER=unrelated perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q 'Only root may change plugin settings' <<<"$reseller_denied"
+! grep -q '<h1>Unauthorized</h1>' <<<"$reseller_denied"
 
 now="$(date +%s)"
 cat > "$TMP_DIR/account-cache/rate.json" <<JSON
@@ -111,6 +161,18 @@ SH
 chmod 0755 "$TMP_DIR/scanner-ok"
 
 scan_marker="$TMP_DIR/scanner-runs"
+whm_refresh_body="refresh=1&account=customer01&view_account=customer01&search=customer&sort=inodes&action_nonce=$whm_nonce"
+whm_refresh="$(printf '%s' "$whm_refresh_body" | env "${whm_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" REQUEST_METHOD=POST CONTENT_LENGTH="${#whm_refresh_body}" perl "$ROOT_DIR/src/whm/index.cgi")"
+grep -q '^Location: index.cgi?search=customer&sort=inodes&view_account=customer01' <<<"$whm_refresh"
+test "$(wc -l < "$scan_marker" | tr -d ' ')" = "1"
+for attempt in 1 2; do
+  whm_refreshed="$(env "${whm_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" QUERY_STRING='search=customer&sort=inodes&view_account=customer01' perl "$ROOT_DIR/src/whm/index.cgi")"
+  grep -q '<h1>Account: customer01</h1>' <<<"$whm_refreshed"
+  test "$(wc -l < "$scan_marker" | tr -d ' ')" = "1"
+done
+test ! -e "$TMP_DIR/cache/nonces/root.notice.json"
+rm "$scan_marker"
+
 cpanel_success="$(printf '%s' "$cpanel_body" | env "${cpanel_env[@]}" HELP4_DU_SCANNER="$TMP_DIR/scanner-ok" HELP4_DU_TEST_SCAN_MARKER="$scan_marker" REQUEST_METHOD=POST CONTENT_LENGTH="${#cpanel_body}" perl "$ROOT_DIR/src/cpanel/index.live.pl")"
 grep -q '^Status: 303 See Other' <<<"$cpanel_success"
 grep -q '^Location: index.live.pl?scan_status=refreshed' <<<"$cpanel_success"
