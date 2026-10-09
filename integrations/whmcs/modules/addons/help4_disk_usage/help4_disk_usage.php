@@ -6,7 +6,7 @@ if (!defined('WHMCS')) {
 
 use WHMCS\Database\Capsule;
 
-const H4DU_VERSION = '1.0.1';
+const H4DU_VERSION = '1.0.2';
 const H4DU_DEFAULT_RELEASE_URL = 'https://github.com/Help4Network/help4-disk-usage/archive/refs/tags/v1.0.1.tar.gz';
 const H4DU_DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Help4Network/help4-disk-usage/main/update.json';
 

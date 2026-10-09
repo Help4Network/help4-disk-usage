@@ -32,6 +32,7 @@ jobs:
       - name: Perl syntax
         run: |
           perl -c src/bin/help4-disk-usage-scan
+          perl -c scripts/preflight.pl
           perl -c src/whm/index.cgi
           PERL5LIB=tests/lib perl -c src/cpanel/index.live.pl
 
@@ -44,6 +45,7 @@ jobs:
       - name: Scanner smoke tests
         run: |
           ./tests/smoke_scanner.sh
+          perl tests/platform_preflight.pl
           perl tests/scanner_hardening.pl
           perl tests/file_workflows.pl
           perl tests/tree_rankings.pl
@@ -72,3 +74,29 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/h4du-ui" --no-save playwright@1.54.1
           "$RUNNER_TEMP/h4du-ui/node_modules/.bin/playwright" install --with-deps chromium
           NODE_PATH="$RUNNER_TEMP/h4du-ui/node_modules" node tests/browser_workflows.js
+
+  linux-distros:
+    name: Linux collector (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['almalinux:8', 'almalinux:9', 'almalinux:10', 'ubuntu:24.04']
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install test runtime only
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y perl git tar gzip libstdc++6
+          else
+            dnf install -y perl perl-JSON-PP perl-Test-Simple git tar gzip libstdc++
+          fi
+      - uses: actions/checkout@v4
+      - name: OS classification and Linux filesystem regressions
+        run: |
+          perl tests/platform_preflight.pl
+          bash tests/smoke_scanner.sh
+          perl tests/scanner_hardening.pl
+          perl tests/file_workflows.pl
+          perl tests/tree_rankings.pl

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 Candidate
+
+- Add `install.sh --check` and prerequisite validation before installation writes: OS/panel pairing, architecture, Jupiter, native registration commands, bundled Perl modules, cron/logrotate and required utilities.
+- Parse OS metadata as data rather than sourcing it. Flag existing legacy installations separately from the vendor's current supported matrix.
+- Add AlmaLinux 8/9/10 and Ubuntu 24.04 collector CI. CloudLinux classifications are tested, but AlmaLinux containers do not certify CloudLinux/CageFS behavior.
+- The published update manifest remains on 1.0.1 until native installation/role/GUI validation promotes this candidate.
+
 ## 1.0.1
 
 - Redirect WHM POST actions to a clean relative GET, preserving account drill-down and account-list search/sort without replaying scans, settings changes or updates on reload.

@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1:-}" = "--check" ] && [ "$#" -eq 1 ]; then
+  exec perl "$ROOT_DIR/scripts/preflight.pl"
+fi
+if [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--check]" >&2
+  exit 2
+fi
 if [ "$(id -u)" -ne 0 ]; then
   echo "Install must run as root on a cPanel & WHM server." >&2
   exit 1
 fi
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Check native integration and runtime prerequisites before touching an installation.
+perl "$ROOT_DIR/scripts/preflight.pl"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ROOT="${HELP4_DU_BACKUP_DIR:-}"
 BACKUP_DIR=""
