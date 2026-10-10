@@ -46,6 +46,7 @@ jobs:
         run: |
           ./tests/smoke_scanner.sh
           perl tests/platform_preflight.pl
+          perl tests/install_safety.pl
           perl tests/scanner_hardening.pl
           perl tests/file_workflows.pl
           perl tests/tree_rankings.pl
@@ -96,7 +97,29 @@ jobs:
       - name: OS classification and Linux filesystem regressions
         run: |
           perl tests/platform_preflight.pl
+          perl tests/install_safety.pl
           bash tests/smoke_scanner.sh
           perl tests/scanner_hardening.pl
           perl tests/file_workflows.pl
           perl tests/tree_rankings.pl
+
+  macos-developer:
+    name: macOS developer regressions (not a native panel target)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Portable installer, collector and navigation fixtures
+        run: |
+          perl tests/platform_preflight.pl
+          perl tests/install_safety.pl
+          perl tests/scanner_hardening.pl
+          perl tests/file_workflows.pl
+          perl tests/tree_rankings.pl
+      - name: Native installation fails closed on macOS
+        run: |
+          set +e
+          bash install.sh --check > "$RUNNER_TEMP/help4-preflight.json"
+          result=$?
+          set -e
+          test "$result" -eq 2
+          perl -MJSON::PP -0777 -e 'my $r = decode_json(<>); die "macOS accepted" if $r->{ok}; die "Linux boundary missing" unless grep { /requires Linux/ } @{$r->{errors}}' "$RUNNER_TEMP/help4-preflight.json"

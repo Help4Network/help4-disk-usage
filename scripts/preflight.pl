@@ -4,11 +4,13 @@ use warnings;
 use FindBin;
 use lib "$FindBin::Bin/../src/lib";
 use Help4::DiskUsage::Platform;
+use Help4::DiskUsage::InstallSafety;
 use JSON::PP;
 use POSIX qw(uname);
 
 my @errors;
 my @warnings;
+my $paths = {ok => 0, objects_checked => 0, errors => []};
 push @errors, 'Plugin installation requires Linux' unless $^O eq 'linux';
 push @errors, 'Plugin installation requires root' unless $> == 0;
 my $os = eval {
@@ -36,6 +38,10 @@ for my $command (qw(install tar gzip curl sha256sum nice ionice)) {
 for my $dir ('/etc/cron.d', '/etc/logrotate.d') {
     push @errors, "Required system integration directory is missing: $dir" unless -d $dir;
 }
+if ($^O eq 'linux' && $> == 0) {
+    $paths = Help4::DiskUsage::InstallSafety::audit(Help4::DiskUsage::InstallSafety::targets());
+    push @errors, @{$paths->{errors}};
+}
 my $perl = '/usr/local/cpanel/3rdparty/bin/perl';
 if (-x $perl) {
     my $result = system($perl, '-MJSON::PP', '-MFile::Path', '-MFile::Spec', '-MCwd', '-MFcntl',
@@ -43,6 +49,6 @@ if (-x $perl) {
     push @errors, 'The bundled cPanel Perl runtime is missing required modules' if $result != 0;
 }
 print JSON::PP->new->canonical->pretty->encode({ok => @errors ? JSON::PP::false : JSON::PP::true,
-    os => $os || {}, cpanel_version => $version, platform => $platform, errors => \@errors,
+    os => $os || {}, cpanel_version => $version, platform => $platform, installation_paths => $paths, errors => \@errors,
     warnings => \@warnings, built_by => 'https://help4network.com'});
 exit(@errors ? 2 : 0);

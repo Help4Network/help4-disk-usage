@@ -23,6 +23,10 @@ sudo ./install.sh --check
 
 This reports JSON and performs no installation writes. Missing runtime/native commands, incompatible OS/panel pairs or no Jupiter cause nonzero exit. A legacy warning is not certification or vendor support. The normal installer runs the same check before writing runtime files, metadata or cron integration. It never sources `os-release` as shell code or installs/upgrades Perl, cPanel, the OS or packages automatically.
 
+The installer also inspects its existing destination trees, singleton integration files and ancestors before writing. Symlinks, special files, hard-linked regular files, non-root ownership and group/world write bits fail closed. The read-only inspection stops at 8,192 visits, 32 descendant levels or five seconds; exhausting a bound fails installation rather than skipping entries. It neither changes permissions nor follows links into customer homes. Inspect and resolve a failed path under administrator control before retrying; do not broadly `chmod` a shared server or disable this check.
+
+This is a bounded POSIX metadata snapshot, not a race-free installation transaction, an extended-ACL audit or proof of account isolation. Keep installation targets quiescent and review extended ACLs/native registration separately. cPanel's own plugin registration and sprite generation remain vendor-controlled operations. macOS CI runs portable developer regressions and proves that native installation is rejected there; Windows and macOS are not cPanel/WHM server targets.
+
 Install required system packages using the vendor-supported package manager and rerun the check. AlmaLinux/CloudLinux use RPM-family tooling; Ubuntu uses APT. cPanel's bundled Perl is checked separately from system Perl. On CloudLinux verify the actual account-level runtime, shared lock, private caches, home mounts and File Manager while CageFS/LVE are enabled; never disable isolation to make a test pass.
 
 ## Native Release Gate
