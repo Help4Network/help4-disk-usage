@@ -3,7 +3,9 @@ use strict;
 use warnings;
 use Fcntl qw(S_ISDIR S_ISREG);
 use Errno qw(ENOENT);
-use Time::HiRes qw(time);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
+
+sub monotonic_time { return clock_gettime(CLOCK_MONOTONIC) }
 
 sub targets {
     return [
@@ -34,14 +36,14 @@ sub audit {
         $depth >= 1 && $depth <= 32 && $seconds > 0 && $seconds <= 5;
     my (@errors, %seen);
     my $count = 0;
-    my $deadline = time() + $seconds;
+    my $deadline = monotonic_time() + $seconds;
     my $inspect;
     $inspect = sub {
         my ($path, $kind, $level) = @_;
         # Checking a directory as an ancestor must not suppress a later tree walk.
         return if $seen{"$kind:$path"}++;
         die "Installation path inspection limit exceeded\n" if ++$count > $limit ||
-            time() > $deadline || $level > $depth;
+            monotonic_time() >= $deadline || $level > $depth;
         my @st = lstat $path;
         if (!@st) {
             return if $! == ENOENT;
@@ -82,6 +84,7 @@ sub audit {
             }
             $inspect->($_, 'dir', 0) for @parents;
             $inspect->($path, $kind, 0);
+            die "Installation path inspection limit exceeded\n" if monotonic_time() >= $deadline;
             1;
         };
         push @errors, $@ unless $ok;

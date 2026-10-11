@@ -49,8 +49,39 @@ ok(!audit(depth => 1)->{ok}, 'Depth cap fails closed');
 {
     no warnings 'redefine';
     my $clock = 0;
-    local *Help4::DiskUsage::InstallSafety::time = sub { ++$clock };
+    local *Help4::DiskUsage::InstallSafety::monotonic_time = sub { ++$clock };
     ok(!audit(seconds => 0.5)->{ok}, 'Elapsed-time cap fails closed');
+}
+my $minimal = [{path => "$root/new", kind => 'file'}];
+{
+    no warnings 'redefine';
+    my $calls = 0;
+    local *Help4::DiskUsage::InstallSafety::monotonic_time = sub { ++$calls; return 0 };
+    ok(Help4::DiskUsage::InstallSafety::audit($minimal, anchor => $root, uid => $>, limit => 2)->{ok},
+        'Exact entry cap permits a safe final missing destination');
+    is($calls, 4, 'Deadline, anchor, destination and final guard use the monotonic clock');
+}
+for my $elapsed (5, 6) {
+    no warnings 'redefine';
+    my $calls = 0;
+    local *Help4::DiskUsage::InstallSafety::monotonic_time = sub {
+        return ++$calls == 4 ? $elapsed : 0;
+    };
+    my $late = Help4::DiskUsage::InstallSafety::audit($minimal, anchor => $root, uid => $>, limit => 2);
+    ok(!$late->{ok}, "Final metadata operation reaching elapsed $elapsed fails closed");
+    is($calls, 4, 'Final deadline guard exercised after real metadata checks');
+    is($late->{objects_checked}, 2, 'Deadline rejection does not exceed the exact entry cap');
+    like(join('', @{$late->{errors}}), qr/inspection limit exceeded/, 'Deadline rejection is explicit');
+}
+{
+    no warnings 'redefine';
+    my $calls = 0;
+    local *Help4::DiskUsage::InstallSafety::monotonic_time = sub {
+        return ++$calls == 4 ? 4.999 : 0;
+    };
+    ok(Help4::DiskUsage::InstallSafety::audit($minimal, anchor => $root, uid => $>, limit => 2)->{ok},
+        'Final metadata operation below deadline remains valid');
+    is($calls, 4, 'Passing final clock check is exercised');
 }
 my $bounded = eval { audit(limit => 8193) };
 ok(!$bounded && $@, 'Unbounded inspection configuration rejected');
