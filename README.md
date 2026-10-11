@@ -2,6 +2,10 @@
 
 Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-support reporting.
 
+**Free to use and deploy, including the Help4 WHMCS addon.** No Help4 license key, activation service, subscription, per-server fee or paid feature tier is required. Hosts and vendors may customize the surrounding branding and redistribute the software while retaining the small linked **Built by [Help4 Network](https://help4network.com/)** byline at the bottom of pages and reports and the included copyright/permission notice.
+
+The repository's `LICENSE` records redistribution permission and attribution; it is not a paid activation requirement. cPanel/WHM and WHMCS platform licenses and terms are separate from this free plugin. Free availability does not change the candidate validation and release gates described below.
+
 **Source checkpoint: 1.0.2 candidate. Published update channel: 1.0.1.** The candidate adds pre-install checks and Linux distro CI; native promotion remains gated. See the [OS installation matrix](docs/platform-support.md), including CloudLinux/CageFS requirements and vendor legacy/EOL distinctions. `sudo ./install.sh --check` checks readiness without installation writes.
 
 **1.0.1** keeps WHM actions and unavailable reports inside native navigation, preserves account filters and drill-down after rescans, prevents repeat actions on reload, and improves path search and section links. It retains the 1.0.0 file workflows: recursive directory-tree rankings, safe native File Manager navigation, search/sort, copying, and exports. It does not introduce a privileged deletion or file-content API.
