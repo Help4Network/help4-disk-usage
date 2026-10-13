@@ -339,6 +339,8 @@ The first blocked connection reports the negotiated fingerprint without authenti
 }
 ```
 
+An unexpected key on an existing target is a stop condition for that target's Check/Deploy/Update/Sync actions. Preserve existing trust, leave **Allow Unpinned SSH** off, and independently verify the exact endpoint, port, host-key algorithm and authorized rotation/rebuild before changing its pin. A TLS certificate or another server's successful probe does not establish this target's SSH identity. The [rollout host-identity gate](docs/rollout.md#ssh-host-identity-gate) explains the required evidence and approval.
+
 If SSH automation is unavailable, upload a verified release tarball and use the normal cPanel-server install steps.
 
 ## WHMCS Customer Reporting
