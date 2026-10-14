@@ -25,6 +25,11 @@ sub targets {
     ];
 }
 
+sub removal_targets {
+    return [grep { $_->{path} ne '/var/cpanel/help4-disk-usage' &&
+        $_->{path} ne '/var/log/help4-disk-usage-scan.log' } @{targets()}];
+}
+
 sub audit {
     my ($targets, %opts) = @_;
     my $anchor = $opts{anchor} || '/';

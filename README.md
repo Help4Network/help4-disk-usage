@@ -6,7 +6,7 @@ Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-sup
 
 The repository's `LICENSE` records redistribution permission and attribution; it is not a paid activation requirement. cPanel/WHM and WHMCS platform licenses and terms are separate from this free plugin. Free availability does not change the candidate validation and release gates described below.
 
-**Source checkpoint: 1.0.2 candidate. Published update channel: 1.0.1.** The candidate adds pre-install checks and Linux distro CI; native promotion remains gated. See the [OS installation matrix](docs/platform-support.md), including CloudLinux/CageFS requirements and vendor legacy/EOL distinctions. `sudo ./install.sh --check` checks readiness without installation writes.
+**Source checkpoint: 1.0.2 candidate. Published update channel: 1.0.1.** The candidate adds install/removal preflight checks and Linux distro CI; native promotion remains gated. See the [OS installation matrix](docs/platform-support.md), including CloudLinux/CageFS requirements and vendor legacy/EOL distinctions. `sudo ./install.sh --check` checks readiness without installation writes.
 
 **1.0.1** keeps WHM actions and unavailable reports inside native navigation, preserves account filters and drill-down after rescans, prevents repeat actions on reload, and improves path search and section links. It retains the 1.0.0 file workflows: recursive directory-tree rankings, safe native File Manager navigation, search/sort, copying, and exports. It does not introduce a privileged deletion or file-content API.
 
@@ -215,10 +215,15 @@ Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 ## Uninstall from a cPanel Server
 
 ```bash
+sudo ./uninstall.sh --check
 sudo ./uninstall.sh
 ```
 
-The uninstaller calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. It intentionally leaves scan cache data in `/var/cpanel/help4-disk-usage` so operators can decide whether to retain or delete history. Set `HELP4_DU_BACKUP_DIR` only when an explicit filesystem snapshot is required.
+Use a reviewed, checksum-verified release checkout and finish pending/active scans before removal. `--check` is read-only: it requires Linux/root and applies the bounded ownership/no-follow path audit to the nine managed tree/integration targets before any backup, native hook or deletion. Unsafe types, writable ancestors, foreign owners, hard links or inspection limits refuse removal without repairing permissions. Cache/log data and customer homes are not traversed by this removal audit. Unlike install readiness, removal does not require a currently supported OS or the installer dependencies; retiring an old installation still needs safe paths.
+
+The uninstaller calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. A failing native hook stops subsequent steps instead of continuing deletion. Native hooks can have partial effects before failure; this is not atomic rollback, continuous path-replacement protection, a registry-cleanup certification or an active-worker lock held throughout removal. Resolve the failure and use an identified prior Git release for recovery before retrying.
+
+Scan cache data in `/var/cpanel/help4-disk-usage` and the scan log are intentionally retained so operators can decide whether to retain or delete history. Set `HELP4_DU_BACKUP_DIR` only when an explicit filesystem snapshot is required. `perl tests/uninstall_safety.pl` checks real metadata on synthetic paths and an offline root/preflight/vendor-hook transport; only allowlisted fixture paths undergo real removal/copy. Linux/root native lifecycle verification remains required before stable promotion.
 
 ## Install the WHMCS Addon
 

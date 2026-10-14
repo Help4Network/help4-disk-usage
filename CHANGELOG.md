@@ -2,6 +2,7 @@
 
 ## 1.0.2 Candidate
 
+- Add read-only `uninstall.sh --check` and the bounded Linux/root ownership/no-follow removal audit before any backup, native hook or deletion. Retained cache/log paths are not traversed. Reject unknown arguments and stop later deletion on native-hook failures. Add guarded synthetic removal/copy and refusal controls; real native lifecycle, worker quiescence and continuous path safety remain release gates.
 - Add `install.sh --check` and prerequisite validation before installation writes: OS/panel pairing, architecture, Jupiter, native registration commands, bundled Perl modules, cron/logrotate and required utilities.
 - Parse OS metadata as data rather than sourcing it. Flag existing legacy installations separately from the vendor's current supported matrix.
 - Add AlmaLinux 8/9/10 and Ubuntu 24.04 collector CI. CloudLinux classifications are tested, but AlmaLinux containers do not certify CloudLinux/CageFS behavior.
