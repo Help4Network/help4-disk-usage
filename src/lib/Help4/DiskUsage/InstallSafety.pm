@@ -1,8 +1,8 @@
 package Help4::DiskUsage::InstallSafety;
 use strict;
 use warnings;
-use Fcntl qw(S_ISDIR S_ISREG);
-use Errno qw(ENOENT);
+use Fcntl qw(S_ISDIR S_ISREG O_RDONLY O_NOFOLLOW O_NONBLOCK :flock F_GETFD F_SETFD FD_CLOEXEC);
+use Errno qw(ENOENT EWOULDBLOCK EAGAIN);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
 sub monotonic_time { return clock_gettime(CLOCK_MONOTONIC) }
@@ -28,6 +28,55 @@ sub targets {
 sub removal_targets {
     return [grep { $_->{path} ne '/var/cpanel/help4-disk-usage' &&
         $_->{path} ne '/var/log/help4-disk-usage-scan.log' } @{targets()}];
+}
+
+sub with_removal_lock {
+    my ($callback, %opts) = @_;
+    die "Invalid removal callback\n" unless ref($callback) eq 'CODE';
+    my $lock = $opts{lock_path} || '/var/cpanel/help4-disk-usage/locks/scan.lock';
+    my $targets = $opts{targets} || removal_targets();
+    my $uid = defined $opts{uid} ? $opts{uid} : 0;
+    my $deadline = monotonic_time() + 5;
+    my $paths = audit([{path => $lock, kind => 'file'}], anchor => $opts{anchor} || '/', uid => $uid);
+    die "Removal mutex path is unsafe; inspect installation ownership and permissions\n" unless $paths->{ok};
+    my @before = lstat $lock;
+    if (!@before) {
+        die "Cannot inspect removal mutex\n" unless $! == ENOENT;
+        for my $target (@$targets) {
+            my @present = lstat $target->{path};
+            die "Removal mutex missing; repair the installation before removal\n" if @present;
+            die "Cannot inspect removal targets\n" unless $! == ENOENT;
+        }
+        die "Removal mutex inspection exceeded its deadline\n" if monotonic_time() >= $deadline;
+        return $callback->({held => 0, installation_absent => 1});
+    }
+    sysopen my $fh, $lock, O_RDONLY | O_NOFOLLOW | O_NONBLOCK or die "Cannot open removal mutex\n";
+    my ($result, $error);
+    my $ok = eval {
+        my @opened = stat $fh;
+        die "Removal mutex changed during open\n" unless @opened && S_ISREG($opened[2]) &&
+            $opened[0] == $before[0] && $opened[1] == $before[1] && $opened[3] == 1 &&
+            $opened[4] == $uid && !($opened[2] & 0022);
+        my $flags = fcntl($fh, F_GETFD, 0);
+        die "Cannot protect removal mutex handle\n" unless defined $flags &&
+            defined fcntl($fh, F_SETFD, $flags | FD_CLOEXEC);
+        if (!flock($fh, LOCK_EX | LOCK_NB)) {
+            die "A disk usage scan is active; retry removal after it finishes\n" if $! == EWOULDBLOCK || $! == EAGAIN;
+            die "Cannot acquire removal mutex\n";
+        }
+        my @current = lstat $lock;
+        die "Removal mutex changed during admission\n" unless @current && S_ISREG($current[2]) &&
+            $current[0] == $opened[0] && $current[1] == $opened[1] && $current[3] == 1 &&
+            $current[4] == $uid && !($current[2] & 0022);
+        die "Removal mutex inspection exceeded its deadline\n" if monotonic_time() >= $deadline;
+        $result = $callback->({held => 1, installation_absent => 0});
+        1;
+    };
+    $error = $@;
+    my $closed = close $fh;
+    die $error unless $ok;
+    die "Cannot close removal mutex\n" unless $closed;
+    return $result;
 }
 
 sub audit {

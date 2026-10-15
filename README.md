@@ -221,9 +221,11 @@ sudo ./uninstall.sh
 
 Use a reviewed, checksum-verified release checkout and finish pending/active scans before removal. `--check` is read-only: it requires Linux/root and applies the bounded ownership/no-follow path audit to the nine managed tree/integration targets before any backup, native hook or deletion. Unsafe types, writable ancestors, foreign owners, hard links or inspection limits refuse removal without repairing permissions. Cache/log data and customer homes are not traversed by this removal audit. Unlike install readiness, removal does not require a currently supported OS or the installer dependencies; retiring an old installation still needs safe paths.
 
-The uninstaller calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. A failing native hook stops subsequent steps instead of continuing deletion. Native hooks can have partial effects before failure; this is not atomic rollback, continuous path-replacement protection, a registry-cleanup certification or an active-worker lock held throughout removal. Resolve the failure and use an identified prior Git release for recovery before retrying.
+The uninstaller refuses while the default scanner mutex is busy, then holds that same advisory mutex in its parent through optional explicitly requested copies, native hooks and deletion. It neither cancels scans nor waits for an active scanner to finish. The read-only check briefly acquires/releases the mutex and labels its result as a snapshot; apply checks again. A missing mutex with any installed integration refuses; quiesce launch sources and repair through an identified reviewed installer before retrying, rather than creating an arbitrary replacement lock.
 
-Scan cache data in `/var/cpanel/help4-disk-usage` and the scan log are intentionally retained so operators can decide whether to retain or delete history. Set `HELP4_DU_BACKUP_DIR` only when an explicit filesystem snapshot is required. `perl tests/uninstall_safety.pl` checks real metadata on synthetic paths and an offline root/preflight/vendor-hook transport; only allowlisted fixture paths undergo real removal/copy. Linux/root native lifecycle verification remains required before stable promotion.
+The guarded runner calls cPanel `uninstall_plugin` when available, unregisters WHM AppConfig, and removes plugin runtime files. A failing native hook stops subsequent steps instead of continuing deletion. Native hooks can have partial effects before failure; this is not atomic rollback, continuously protected paths, native registry-cleanup certification, protection from concurrent installers or parent-process death. Do not run lifecycle operations concurrently, and quiesce launch sources: a loaded process paused before mutex admission is not canceled or accounted for by this guard. Resolve failures and use an identified prior Git release for recovery before retrying.
+
+Scan cache data in `/var/cpanel/help4-disk-usage` and the scan log are intentionally retained so operators can decide whether to retain or delete history. Cache contents are not traversed; only fixed mutex/ancestor metadata is checked. Set `HELP4_DU_BACKUP_DIR` only when an explicit filesystem snapshot is required. `perl tests/uninstall_safety.pl` checks synthetic metadata and an offline root/preflight/mutex/vendor-hook transport; only allowlisted fixture paths undergo real removal/copy. `perl tests/uninstall_lock.pl` uses real advisory locks and child processes for contention, descriptor inheritance, unsafe paths, expiry and cleanup. `perl tests/uninstall_runner.pl` executes the guarded runner against private rebased paths and real locks, with controlled native-hook probes. Its owner/anchor/OS bootstrap is not native root/cPanel verification. Linux/root native lifecycle verification remains required before stable promotion.
 
 ## Install the WHMCS Addon
 
@@ -620,6 +622,9 @@ Run scanner, security boundary, and branding/update contract smoke tests:
 
 ```bash
 ./tests/smoke_scanner.sh
+perl tests/uninstall_safety.pl
+perl tests/uninstall_lock.pl
+perl tests/uninstall_runner.pl
 ./tests/security_boundaries.sh
 ./tests/branding_update_contract.sh
 ./tests/request_security.sh

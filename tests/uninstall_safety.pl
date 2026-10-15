@@ -21,6 +21,9 @@ sub quote { my $v = shift; $v =~ s/'/'\\''/g; return "'$v'"; }
 my $root = tempdir(CLEANUP => 1);
 chmod 0700, $root;
 my $source = read_file("$FindBin::Bin/../uninstall.sh");
+my $runner = read_file("$FindBin::Bin/../scripts/uninstall-run.pl");
+my ($body) = $runner =~ /^__DATA__\n(.*)\z/ms;
+die 'Removal runner body unavailable' unless defined $body;
 my $targets = Help4::DiskUsage::InstallSafety::removal_targets();
 is(scalar @$targets, 9, 'Removal checks all five trees and four singleton integration paths');
 ok(!grep({$_->{path} =~ m{(?:/home/|\A/var/cpanel/help4-disk-usage|\A/var/log/)}} @$targets),
@@ -51,6 +54,7 @@ my @cases = (
     ['check', ['--check'], 0, 0, '', 0, 0],
     ['check-denied', ['--check'], 0, 2, '', 0, 2],
     ['apply-denied', [], 0, 2, '', 1, 2],
+    ['guard-denied', [], 0, 0, 'guard', 1, 6],
     ['non-root', [], 1000, 0, '', 0, 1],
     ['bad-option', ['--unknown'], 0, 0, '', 0, 2],
     ['extra-option', ['--check', 'extra'], 0, 0, '', 0, 2],
@@ -67,8 +71,12 @@ for my $case (@cases) {
         '/etc/cron.d' => "$dir/cron", '/etc/logrotate.d' => "$dir/logrotate");
     my $script = $source;
     $script =~ s/\Q$_\E/$prefix{$_}/g for keys %prefix;
+    my $apply = $body;
+    $apply =~ s/\Q$_\E/$prefix{$_}/g for keys %prefix;
     die 'Unrebased destructive fixture path' if grep { index($script, $_) >= 0 } keys %prefix;
+    die 'Unrebased removal body fixture path' if grep { index($apply, $_) >= 0 } keys %prefix;
     write_file("$dir/uninstall.sh", $script, 0755);
+    write_file("$dir/apply.sh", "#!/usr/bin/env bash\n$apply", 0755);
     my @paths;
     for my $target (@$targets) {
         my $path = $target->{path}; $path =~ s/\Q$_\E/$prefix{$_}/g for keys %prefix;
@@ -89,7 +97,12 @@ for my $case (@cases) {
     chmod 0755, $unsafe;
     write_file("$dir/tools/id", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$H4DU_FAKE_UID\"\n", 0755);
     write_file("$dir/tools/perl", '#!/usr/bin/env bash' . "\nset -euo pipefail\n" .
-        'test "$#" -eq 1 && test "$1" = "$H4DU_CASE/scripts/uninstall-preflight.pl"' . "\n" .
+        'test "$#" -eq 1' . "\n" .
+        'if [ "$1" = "$H4DU_CASE/scripts/uninstall-run.pl" ]; then' . "\n" .
+        'printf \'%s\n\' guard >> "$H4DU_CASE/trace"' . "\n" .
+        'test "$H4DU_FAIL_HOOK" != guard || exit 6' . "\n" .
+        'exec bash "$H4DU_CASE/apply.sh" "$H4DU_CASE"' . "\nfi\n" .
+        'test "$1" = "$H4DU_CASE/scripts/uninstall-preflight.pl"' . "\n" .
         'printf \'%s\n\' preflight >> "$H4DU_CASE/trace"' . "\n" .
         'printf \'{"ok":%s}\n\' "$H4DU_PREFLIGHT_OK"' . "\nexit \"\$H4DU_PREFLIGHT_EXIT\"\n", 0755);
     write_file("$dir/scripts/uninstall-preflight.pl", "# Synthetic preflight placeholder; command/arguments enforced by transport fixture.\n");
@@ -128,6 +141,7 @@ SH
     is(run_child($dir, 'bash', "$dir/uninstall.sh", @$args), $expected, "$name expected exit status");
     my @trace = -f "$dir/trace" ? split(/\n/, read_file("$dir/trace")) : ();
     my @expected_trace = $name eq 'non-root' || $name eq 'bad-option' || $name eq 'extra-option' ? () : ('preflight');
+    push @expected_trace, 'guard' if !@$args && !$uid && !$preflight;
     push @expected_trace, ('backup') x 9 if $name eq 'apply-explicit-backup';
     push @expected_trace, 'uninstall' if $name =~ /hook-failure|\Aapply(?:-|\z)/ && !$preflight;
     push @expected_trace, 'unregister' if $name eq 'appconfig-hook-failure' || $name eq 'apply' || $name eq 'apply-explicit-backup';
@@ -152,5 +166,5 @@ if ($^O ne 'linux' || $> != 0) {
     is($native_exit, $native->{ok} ? 0 : 2, 'Root Linux read-only preflight status matches metadata audit');
     ok(exists $native->{removal_paths}{objects_checked}, 'Read-only root Linux inspection is explicit, not native uninstall proof');
 }
-note('Offline root/preflight/vendor-hook transports; real removal/copy only on allowlisted synthetic paths. Native lifecycle, active-worker quiescence and continuous path-race protection remain unmeasured.');
+note('Offline root/preflight/mutex/vendor-hook transports; real removal/copy only on allowlisted synthetic paths. Actual advisory-mutex controls are separate; native lifecycle and continuous path-race protection remain unmeasured.');
 done_testing;

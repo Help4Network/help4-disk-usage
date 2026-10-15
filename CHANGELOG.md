@@ -2,6 +2,7 @@
 
 ## 1.0.2 Candidate
 
+- Refuse uninstall while the default scanner mutex is busy and hold that mutex in the parent through native hooks/removal, without canceling scans or creating replacement locks. Add no-follow ownership/identity checks, explicit snapshot-only read-only results, guarded runner wiring and real process/lock regressions. Retain private cache/log history and fail-stop native-hook behavior; native lifecycle, concurrent installer, loaded pre-admission process, crash and continuous path-safety gates remain open.
 - Add read-only `uninstall.sh --check` and the bounded Linux/root ownership/no-follow removal audit before any backup, native hook or deletion. Retained cache/log paths are not traversed. Reject unknown arguments and stop later deletion on native-hook failures. Add guarded synthetic removal/copy and refusal controls; real native lifecycle, worker quiescence and continuous path safety remain release gates.
 - Add `install.sh --check` and prerequisite validation before installation writes: OS/panel pairing, architecture, Jupiter, native registration commands, bundled Perl modules, cron/logrotate and required utilities.
 - Parse OS metadata as data rather than sourcing it. Flag existing legacy installations separately from the vendor's current supported matrix.
