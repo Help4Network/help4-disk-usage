@@ -34,11 +34,13 @@ Run the normal smoke suite plus:
 
 ```bash
 perl tests/scanner_hardening.pl
-php tests/whmcs_tenant_isolation.php
 bash tests/updater_channel.sh
+perl tests/native_separation.pl
 ```
 
-Filesystem tests use temporary synthetic trees and subprocess-only scheduling hooks. WHMCS lifecycle tests use a query stub, not a claim to have proven the host application's SQL/authorization stack. Update tests use isolated paths and network stubs, never root installation on the developer machine. The CI and tag-release workflows run these tests.
+Filesystem tests use temporary synthetic trees and subprocess-only scheduling hooks. Update tests use isolated paths and network stubs, never root installation on the developer machine. This native repository's CI and tag-release workflows run these native tests and the separation regression.
+
+Following the 2026-10-17 source extraction, WHMCS tenant-isolation, SSH pin/output-cap, and addon package tests are owned by the [canonical standalone addon repository](https://github.com/Help4Network/help4-disk-usage-whmcs); see its [cPanel guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/cpanel.md) and [install guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md). The historical WHMCS lifecycle tests use a query stub, not proof of the host application's SQL/authorization stack. The original findings and dated deployment observations remain historical evidence, not new native, WHMCS, or Plesk acceptance from extraction.
 
 ## Remaining Work And Trust Assumptions
 

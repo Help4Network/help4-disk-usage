@@ -12,22 +12,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          coverage: none
-
       - name: Shell syntax
         run: |
           bash -n install.sh
           bash -n uninstall.sh
           bash -n src/bin/help4-disk-usage-update
           bash -n scripts/package.sh
-          bash -n scripts/package-whmcs.sh
           bash -n scripts/build-tutorial-pack.sh
           bash -n tests/backup_policy.sh
-          bash -n tests/whmcs_package.sh
 
       - name: Perl syntax
         run: |
@@ -37,12 +29,7 @@ jobs:
           perl -c scripts/uninstall-run.pl
           perl -c src/whm/index.cgi
           PERL5LIB=tests/lib perl -c src/cpanel/index.live.pl
-
-      - name: PHP syntax
-        run: |
-          php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
-          php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
-          php -l tests/whmcs_ssh_security.php
+          perl -c tests/native_separation.pl
 
       - name: Scanner smoke tests
         run: |
@@ -57,19 +44,16 @@ jobs:
           perl tests/file_workflows.pl
           perl tests/tree_rankings.pl
           bash tests/updater_channel.sh
-          php tests/whmcs_tenant_isolation.php
+          perl tests/native_separation.pl
           ./tests/security_boundaries.sh
           ./tests/backup_policy.sh
           # The channel manifest follows the immutable tag archive, not candidate code.
           HELP4_DU_PREPUBLICATION_MANIFEST=1 ./tests/branding_update_contract.sh
           ./tests/request_security.sh
-          ./tests/whmcs_package.sh
-          php tests/whmcs_ssh_security.php
 
-      - name: Build release packages
+      - name: Build native release package
         run: |
           ./scripts/package.sh
-          ./scripts/package-whmcs.sh
 
       - name: Set up browser test runtime
         uses: actions/setup-node@v4

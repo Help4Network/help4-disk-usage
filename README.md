@@ -1,6 +1,8 @@
 # Help4 Disk Usage
 
-Fast WHM/cPanel disk and inode reporting, plus WHMCS deployment and customer-support reporting.
+Native WHM/cPanel disk and inode reporting, with optional deployment and customer-support reporting through the separate [Help4 Disk Usage WHMCS addon](https://github.com/Help4Network/help4-disk-usage-whmcs).
+
+This repository owns the cPanel/WHM plugin. The canonical WHMCS repository owns the addon for cPanel and Plesk; see its [cPanel integration guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/cpanel.md) and [installation and upgrade guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md). The native panel plugin remains required on each managed server. Addon extraction does not establish new native-platform acceptance or change this repository's runtime, installer, uninstaller, versions, or `update.json` channel.
 
 **Free to use and deploy, including the Help4 WHMCS addon.** No Help4 license key, activation service, subscription, per-server fee or paid feature tier is required. Hosts and vendors may customize the surrounding branding and redistribute the software while retaining the small linked **Built by [Help4 Network](https://help4network.com/)** byline at the bottom of pages and reports and the included copyright/permission notice.
 
@@ -14,7 +16,7 @@ Help4 Disk Usage turns the original Help4 Network [`find_large_files_and_inodes`
 
 - A WHM plugin for root and reseller disk/inode audits.
 - A cPanel account plugin for customer self-service visibility.
-- A WHMCS addon module for deployment, server sync, admin support reports, and customer-facing summaries.
+- An optional, separately distributed [WHMCS addon](https://github.com/Help4Network/help4-disk-usage-whmcs) for deployment, server sync, admin support reports, and customer-facing summaries.
 
 The project is intentionally permissive. Hosts, agencies, cPanel, WHMCS operators, and other vendors can use it, modify it, and ship it. Keep the Help4 credit visible at the bottom.
 
@@ -41,10 +43,10 @@ src/cpanel/index.live.pl                              cPanel account page
 src/static/                                           Shared UI assets
 src/lib/Help4/DiskUsage/Report.pm                      Scoped report rendering, exports, native file navigation
 packaging/                                            cPanel/WHM plugin metadata
-integrations/whmcs/modules/addons/help4_disk_usage/   WHMCS addon module
 docs/                                                 Security, validation, and marketing notes
-tests/                                                Local scanner smoke tests
-scripts/package.sh                                    Release tarball builder
+docs/whmcs-integration.md                             Pointer to canonical WHMCS guides and migration boundaries
+tests/                                                Native scanner, lifecycle, UI, and separation regressions
+scripts/package.sh                                    Native cPanel/WHM release tarball builder
 install.sh                                            cPanel/WHM installer
 uninstall.sh                                          cPanel/WHM uninstaller
 CHANGELOG.md                                          Release history
@@ -90,21 +92,7 @@ CHANGELOG.md                                          Release history
 
 ### WHMCS
 
-- Addon module under `modules/addons/help4_disk_usage`.
-- Admin dashboard for synced servers and offender accounts.
-- WHMCS admin-home widget with health counts and prioritized server rows.
-- Admin **Server Health** view across WHMCS cPanel server records.
-- cPanel server list from WHMCS `tblservers`.
-- Deployment/check/update/sync actions for cPanel servers.
-- Fail-closed SSH host-key pinning for remote actions.
-- Verified remote exit status, bounded execution time, and bounded output.
-- Health states for missing, stale, erroring, disabled, attention-needed, and healthy servers.
-- Manual deployment command when one-click SSH deploy is unavailable.
-- Per-account scan data mapped to exactly one current Active/Suspended `tblhosting` service by server ID and cPanel username; ambiguous or historical mappings are hidden from clients.
-- Customer-area report at `index.php?m=help4_disk_usage`.
-- Detailed customer large-file/tree/hotspot reports and admin account drill-downs. Customer links lead only to their currently entitled hosting service; use WHMCS's native control-panel login there, then open the cPanel report for direct File Manager jumps.
-- Client navbar link when enabled.
-- Event log for deploy/check/sync results.
+The separate [canonical addon](https://github.com/Help4Network/help4-disk-usage-whmcs) owns deployment, server health, support reports, customer summaries, and its cPanel/Plesk adapters. Its [cPanel guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/cpanel.md) describes the native scanner dependency and cPanel operations. This repository no longer ships, tests, or builds addon runtime files. Native cPanel File Manager navigation remains in this plugin; WHMCS does not replace the panel plugin.
 
 ## Public Usage Walkthrough
 
@@ -127,31 +115,25 @@ The repository companion guide is in [`docs/usage-guide.md`](docs/usage-guide.md
 
 ### WHMCS Addon
 
-- WHMCS with addon module support.
-- PHP compatible with current WHMCS releases.
-- WHMCS database access through `WHMCS\Database\Capsule`.
-- A supported SSH transport for one-click deploy/check/update/sync actions: PHP `ssh2`, bundled phpseclib 2, or bundled phpseclib 3.
-
-The addon prefers PHP `ssh2` and falls back to WHMCS's bundled phpseclib. If neither transport is available, it still provides manual deployment commands and can store/report data after scans are synced by another trusted workflow.
+WHMCS/PHP/database/transport requirements belong to the [canonical installation guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md). Install this repository's native plugin on each managed cPanel server; the separate WHMCS addon is optional and is installed on the WHMCS host. Plesk requires its own native panel extension, not this cPanel package.
 
 ## Build a Release
 
 ```bash
 ./scripts/package.sh
-./scripts/package-whmcs.sh
 ```
 
 Output:
 
 ```text
 outputs/help4-disk-usage-<version>.tar.gz
-outputs/help4-disk-usage-whmcs-<version>.zip
-outputs/help4-disk-usage-whmcs-<version>.zip.sha256
 ```
 
-The tarball contains the complete WHM/cPanel plugin, WHMCS addon, docs, tests, and packaging metadata. The zip is a standalone WHMCS addon package that extracts directly below `modules/addons/`.
+The tarball contains the native WHM/cPanel plugin, docs, native tests, and packaging metadata. WHMCS addon source, ZIP packaging, and addon tests are owned by the [separate repository](https://github.com/Help4Network/help4-disk-usage-whmcs); this repository does not publish WHMCS addon artifacts.
 
-CI runs shell syntax checks, Perl syntax checks, PHP syntax checks, scanner smoke tests, security-boundary smoke tests, standalone WHMCS package validation, and release packaging on pushes and pull requests. Version-tag pushes publish both install packages and their checksums to GitHub Releases.
+`scripts/package.sh` uses `git archive HEAD`, not the working tree. Until extraction edits are committed, its output still represents the old committed source and may contain the embedded addon; it is not the extraction candidate. Do not infer package separation from a build of an unchanged `HEAD`.
+
+CI runs shell and Perl syntax checks, native scanner/lifecycle/security-boundary regressions, the native separation regression, synthetic browser workflows, and native release packaging on pushes and pull requests. Version-tag pushes publish only the native install tarball and its checksum to this repository's GitHub Releases. Publication and installed-system acceptance remain separate gates.
 
 ## Install on a cPanel Server
 
@@ -212,6 +194,8 @@ The manifest publishes `version`, immutable `package_url`, required `sha256`, an
 
 Multi-server rollout notes are in [`docs/rollout.md`](docs/rollout.md).
 
+A Git pull updates a source checkout only; it is not a deployed update of installed cPanel files or the WHMCS addon. Use the appropriate verified release and installation procedure for each component. Changing the WHMCS package source does not require a native plugin update, reinstall, removal, rename, or version/channel change.
+
 ## Uninstall from a cPanel Server
 
 ```bash
@@ -229,58 +213,9 @@ Scan cache data in `/var/cpanel/help4-disk-usage` and the scan log are intention
 
 ## Install the WHMCS Addon
 
-Download these files from [GitHub Releases](https://github.com/Help4Network/help4-disk-usage/releases/latest):
+Use the [canonical WHMCS installation guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md) for release selection, checksum verification, installation on the WHMCS host, requirements, role configuration, and first-run checks. Use its [cPanel integration guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/cpanel.md) for cPanel server preparation, host-key pinning, and bounded syncs. The native cPanel/WHM plugin remains required on every managed cPanel server.
 
-```text
-help4-disk-usage-whmcs-<version>.zip
-help4-disk-usage-whmcs-<version>.zip.sha256
-```
-
-Verify the package:
-
-```bash
-sha256sum -c help4-disk-usage-whmcs-<version>.zip.sha256
-```
-
-Set the WHMCS root and extract the package. A prior immutable release ZIP is the rollback source:
-
-```bash
-export WHMCS_ROOT=/path/to/whmcs
-test -f "$WHMCS_ROOT/init.php"
-unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
-chown -R --reference="$WHMCS_ROOT/modules/addons" \
-  "$WHMCS_ROOT/modules/addons/help4_disk_usage"
-php -l "$WHMCS_ROOT/modules/addons/help4_disk_usage/help4_disk_usage.php"
-php -l "$WHMCS_ROOT/modules/addons/help4_disk_usage/hooks.php"
-```
-
-The final entry point must be:
-
-```text
-<whmcs-root>/modules/addons/help4_disk_usage/help4_disk_usage.php
-```
-
-Then in WHMCS admin:
-
-1. Go to **System Settings > Addon Modules**.
-2. Activate **Help4 Disk Usage**.
-3. Configure:
-   - Release Tarball URL
-   - Update Manifest URL
-   - SSH Port
-   - SSH Host Fingerprints
-   - Allow Unpinned SSH (leave off)
-   - Sync Account Limit
-   - Whole Sync Scan Max Seconds
-   - Client Area Reports
-   - Display Name
-   - Footer Credit Prefix
-4. Set administrator role access for the addon.
-5. Open **Addons > Help4 Disk Usage**.
-
-Use conservative first-run limits such as **Sync Account Limit = 2** and **Whole Sync Scan Max Seconds = 15**. Verify each server's SSH host key from its console and leave **Allow Unpinned SSH** off.
-
-Activation creates:
+The existing addon identity remains `help4_disk_usage`, installed at `modules/addons/help4_disk_usage`; the client route remains `index.php?m=help4_disk_usage`. Existing reporting tables keep their names and data:
 
 ```text
 mod_help4_disk_usage_servers
@@ -288,24 +223,17 @@ mod_help4_disk_usage_accounts
 mod_help4_disk_usage_events
 ```
 
-Deactivation keeps these tables intentionally so support history is not lost.
-
-The detailed operator guide, including server-record preparation, fingerprint pinning, first-run verification, upgrades, removal, troubleshooting, and rollback notes, is in [`docs/whmcs-integration.md`](docs/whmcs-integration.md).
+Do not create a second addon identity or rename/drop the `mod_help4_disk_usage_*` tables when changing the package source. The local [`docs/whmcs-integration.md`](docs/whmcs-integration.md) records the repository boundary and links to the canonical guides.
 
 ## Upgrade the WHMCS Addon
 
-Do not deactivate the addon for a normal upgrade. Verify the new ZIP and extract it over `modules/addons/`. Then save the addon settings and open the addon so WHMCS detects the changed configuration version and runs the module upgrade function. Roll back by reinstalling the previous immutable release ZIP.
+Follow the canonical [install and upgrade procedure](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md) using a verified immutable addon release. Update the existing addon in place, retaining its identity, settings, role access, report history, and tables. Do not deactivate the addon or drop/rename its tables merely to switch package source. Do not uninstall, rename, or reinstall the native panel plugin for this repository separation.
 
-```bash
-export WHMCS_ROOT=/path/to/whmcs
-unzip -qo help4-disk-usage-whmcs-<version>.zip -d "$WHMCS_ROOT/modules/addons"
-chown -R --reference="$WHMCS_ROOT/modules/addons" \
-  "$WHMCS_ROOT/modules/addons/help4_disk_usage"
-```
-
-Confirm the module version, Server Health page, admin-home widget, and a mapped client report after upgrading.
+Retain the previous immutable addon ZIP and checksum for rollback; do not create filesystem snapshots for this source change. A Git pull is not a deployed addon update. Confirm the installed module version, admin views/health widget, mapped client scope, and a bounded cPanel Check/Sync after an explicitly authorized installation. Extraction alone is not deployment or acceptance.
 
 ## WHMCS Deployment Workflow
+
+The following cPanel-specific workflow is operated by the separate addon, not code shipped in this native package. Its [canonical cPanel guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/cpanel.md) owns current behavior and requirements for this adapter; do not apply these cPanel commands or manifest URLs to Plesk. Keep native package/manifest URLs pointed at this project's native releases and `update.json`, not an addon ZIP.
 
 WHMCS admins also get a **Help4 Disk Usage Health** widget on the WHMCS admin home dashboard. It shows health counts, the highest-priority cPanel server rows, and a direct link to the full health page.
 
@@ -352,6 +280,8 @@ If SSH automation is unavailable, upload a verified release tarball and use the 
 
 ## WHMCS Customer Reporting
 
+Service mapping, customer entitlement checks, and the WHMCS client template are now owned and tested in the [canonical addon repository](https://github.com/Help4Network/help4-disk-usage-whmcs). The cPanel mapping described here is not a Plesk acceptance claim.
+
 When WHMCS syncs scan JSON, it maps cPanel accounts to WHMCS services by:
 
 - `tblhosting.server` = WHMCS server ID
@@ -367,9 +297,7 @@ Customers see only their own mapped services and support-safe remediation hints.
 
 ## Remove the WHMCS Addon
 
-Deactivate **Help4 Disk Usage** under **System Settings > Addon Modules**, and then remove `modules/addons/help4_disk_usage`.
-
-Deactivation intentionally retains the `mod_help4_disk_usage_*` tables so support history is not silently destroyed. Removing the WHMCS addon does not uninstall the cPanel/WHM plugin from managed servers.
+Removal is a separate operator decision, not a migration step. Follow the canonical [installation/removal guide](https://github.com/Help4Network/help4-disk-usage-whmcs/blob/main/docs/install.md). Removing the WHMCS addon does not uninstall the native cPanel/WHM plugin, and report tables/history must not be dropped as part of changing repositories.
 
 ## Scanner CLI
 
@@ -461,6 +389,8 @@ When a whole-server scan reaches its budget, the scanner writes the completed ac
 
 ## Security Model
 
+Native controls are tested here. WHMCS-specific controls below describe the cPanel integration and are maintained and tested in the [standalone addon repository](https://github.com/Help4Network/help4-disk-usage-whmcs); they are not native package test coverage or new Plesk acceptance.
+
 - Root WHM users see all accounts.
 - WHM resellers see only owned accounts.
 - cPanel users see only their own account.
@@ -522,6 +452,8 @@ Expected set:
 
 Public screenshots are generated entirely from dummy fixtures. Live authenticated screenshots and raw live HTML are engineering evidence only and must not be placed in public tutorial packages.
 
+The existing WHMCS illustrations remain valid synthetic tutorial/marketing assets. They do not mean this repository still ships the addon or prove current native or standalone-addon acceptance.
+
 With Node.js, Playwright, `zip`, and `rg` available, rebuild the privacy-checked tutorial bundle with:
 
 ```bash
@@ -529,6 +461,8 @@ With Node.js, Playwright, `zip`, and `rg` available, rebuild the privacy-checked
 ```
 
 ## Genie Validation
+
+The dated observations below are retained historical evidence. Repository extraction does not revalidate these deployments or establish new native, WHMCS, or Plesk acceptance.
 
 Genie was the first live target.
 
@@ -589,7 +523,7 @@ Audience:
 
 ## Compatibility Notes
 
-This package follows public cPanel and WHMCS module conventions:
+This native package follows public cPanel module conventions. The separately distributed WHMCS addon follows its own module conventions:
 
 - WHM registration uses AppConfig.
 - cPanel interface registration uses `install.json`.
@@ -597,7 +531,7 @@ This package follows public cPanel and WHMCS module conventions:
 - WHM plugin files are installed below `whostmgr/docroot/cgi`.
 - WHM output uses cPanel's bundled Perl and `master_templates/master.tmpl`, preserving the normal left navigation and right-side content area.
 - Runtime code is stored below `/usr/local/cpanel/3rdparty/help4-disk-usage`.
-- WHMCS integration is an addon module under `modules/addons/help4_disk_usage`.
+- The [separate WHMCS integration](https://github.com/Help4Network/help4-disk-usage-whmcs) retains the addon module path `modules/addons/help4_disk_usage`.
 - WHMCS admin output uses the addon module `_output` function.
 - WHMCS client output uses `_clientarea`.
 - WHMCS hooks live in `hooks.php`.
@@ -618,7 +552,7 @@ References:
 
 ## Tests
 
-Run scanner, security boundary, and branding/update contract smoke tests:
+Run native scanner, security-boundary, backup-policy, separation, and branding/update contract regressions:
 
 ```bash
 ./tests/smoke_scanner.sh
@@ -626,10 +560,15 @@ perl tests/uninstall_safety.pl
 perl tests/uninstall_lock.pl
 perl tests/uninstall_runner.pl
 ./tests/security_boundaries.sh
-./tests/branding_update_contract.sh
+./tests/backup_policy.sh
+HELP4_DU_PREPUBLICATION_MANIFEST=1 ./tests/branding_update_contract.sh
 ./tests/request_security.sh
-./tests/whmcs_package.sh
+perl tests/native_separation.pl
 ```
+
+`HELP4_DU_PREPUBLICATION_MANIFEST=1` allows the candidate scanner version to differ from the unchanged published update channel; native manifest digest checks still run. Omit it when checking version parity for a published release. The separation test checks working-tree files, native build/install paths, and CI/release wiring without packaging the old `HEAD`.
+
+WHMCS tenant-isolation, SSH pin/output-cap, and addon package regressions now belong to the [canonical addon repository](https://github.com/Help4Network/help4-disk-usage-whmcs), not this native suite. Test results here do not establish the deployed WHMCS framework, database, roles, transport, or Plesk acceptance.
 
 Run syntax checks:
 
@@ -637,9 +576,10 @@ Run syntax checks:
 perl -c src/bin/help4-disk-usage-scan
 perl -c src/whm/index.cgi
 PERL5LIB=tests/lib perl -c src/cpanel/index.live.pl
-php -l integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php
-php -l integrations/whmcs/modules/addons/help4_disk_usage/hooks.php
-bash -n scripts/package-whmcs.sh
+perl -c tests/native_separation.pl
+bash -n scripts/package.sh
+bash -n tests/backup_policy.sh
+bash -n tests/branding_update_contract.sh
 ```
 
 ## License

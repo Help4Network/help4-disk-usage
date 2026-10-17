@@ -85,7 +85,5 @@ manifest_sha="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(<>); print $d->{sha2
 grep -Eq '^[0-9a-f]{64}$' <<<"$manifest_sha"
 
 grep -q 'update manifest must provide sha256' "$ROOT_DIR/src/bin/help4-disk-usage-update"
-grep -q 'SSH2_FINGERPRINT_SHA256' "$ROOT_DIR/integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php"
-grep -q 'Remote command output exceeded the 16 MiB safety limit' "$ROOT_DIR/integrations/whmcs/modules/addons/help4_disk_usage/help4_disk_usage.php"
 
 echo "branding/update contract smoke test passed"
